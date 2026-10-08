@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-overview",
+  "owner": { "name": "tomotos141" },
+  "metadata": {
+    "description": "A Claude Code pane that keeps the current task in view",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "overview",
+      "description": "A pane with the current task at a glance: goal, completion criteria, offshoots and next step, kept current by Claude",
+      "source": "./plugins/overview"
+    }
+  ]
+}

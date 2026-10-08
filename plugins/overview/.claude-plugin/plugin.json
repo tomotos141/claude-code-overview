@@ -1,0 +1,18 @@
+{
+  "name": "overview",
+  "version": "1.0.0",
+  "description": "A pane with the current task at a glance: goal, completion criteria, offshoots and next step, kept current by Claude",
+  "author": { "name": "tomotos141" },
+  "homepage": "https://github.com/tomotos141/claude-code-overview",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Pane language",
+      "description": "Language of the pane's headings (en or ja). Claude writes the contents in the language you use.",
+      "default": "en",
+      "options": ["en", "ja"]
+    }
+  }
+}

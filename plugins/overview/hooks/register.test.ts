@@ -4,14 +4,14 @@ import { expect, test } from 'claude-code/testing'
 import { LABELS, applyUpdate, langOf, summary } from './register'
 
 test('an update replaces what it names and keeps the rest', () => {
-  const first = applyUpdate(null, { goal: 'mod を作る', criteria: [{ text: 'テストが通る', done: false }], next: '書く' }, 1)
-  expect(first).toEqual({ goal: 'mod を作る', criteria: [{ text: 'テストが通る', isDone: false }], offshoots: [], next: '書く', at: 1 })
+  const first = applyUpdate(null, { goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', done: false }], next: 'Write it' }, 1)
+  expect(first).toEqual({ goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', isDone: false }], offshoots: [], next: 'Write it', at: 1 })
 
-  const second = applyUpdate(first, { criteria: [{ text: 'テストが通る', done: true }], offshoots: [{ text: 'kanban 強化', note: 'PR #93' }] }, 2)
-  expect(second?.goal).toBe('mod を作る')
-  expect(second?.criteria).toEqual([{ text: 'テストが通る', isDone: true }])
-  expect(second?.offshoots).toEqual([{ text: 'kanban 強化', note: 'PR #93' }])
-  expect(second?.next).toBe('書く')
+  const second = applyUpdate(first, { criteria: [{ text: 'Tests pass', done: true }], offshoots: [{ text: 'Fix the date picker', note: 'separate PR' }] }, 2)
+  expect(second?.goal).toBe('Ship the checklist')
+  expect(second?.criteria).toEqual([{ text: 'Tests pass', isDone: true }])
+  expect(second?.offshoots).toEqual([{ text: 'Fix the date picker', note: 'separate PR' }])
+  expect(second?.next).toBe('Write it')
 
   expect(applyUpdate(second, { clear: true }, 3)).toBe(null)
   expect(applyUpdate(null, { criteria: [{ nope: 1 }, { text: 'ok' }] }, 4)?.criteria).toEqual([{ text: 'ok', isDone: false }])
@@ -32,10 +32,10 @@ test('the model reads the board back', () => {
 
 test('the model updates the pane through its tool', async ($, on) => {
   on('clock.now', async () => ({ value: 0 }) as never)
-  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: '全貌を見せる', next: '見た目を確かめる' } as never)
+  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: 'Keep the task in view', next: 'Check the pane' } as never)
   expect(ran.deny).toBe(undefined)
-  expect(String(ran.text ?? ran.result)).toContain('goal: 全貌を見せる')
-  expect(String(ran.text ?? ran.result)).toContain('next: 見た目を確かめる')
+  expect(String(ran.text ?? ran.result)).toContain('goal: Keep the task in view')
+  expect(String(ran.text ?? ran.result)).toContain('next: Check the pane')
 })
 
 test('headings come in English unless Japanese is chosen', () => {

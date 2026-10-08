@@ -36,12 +36,14 @@ A Claude Code build that supports plugin hook modules ("mods"). Developed agains
 ## Install
 
 ```bash
-claude plugin marketplace add tomotos141/claude-code-overview
+claude plugin marketplace add https://github.com/tomotos141/claude-code-overview
 ```
 
 ```bash
 claude plugin install overview@claude-code-overview
 ```
+
+For Japanese headings, add `--config language=ja` to the install command.
 
 Then start a new session. The pane opens when the session starts (Claude Code decides where it sits); if you don't see it, type `/overview`.
 
@@ -51,7 +53,7 @@ Then start a new session. The pane opens when the session starts (Claude Code de
 | --- | --- | --- |
 | `language` | `en`, `ja` | `en` |
 
-It sets the language of the pane's own headings. Claude writes the contents in whatever language you use with it. Change it from `/config`; it takes effect in the next session.
+It sets the language of the pane's own headings. Claude writes the contents in whatever language you use with it. Set it when installing with `--config language=ja`, or later with `/plugin configure overview@claude-code-overview`; it takes effect in the next session.
 
 ## Tips
 
@@ -81,18 +83,20 @@ plugin の hook モジュール（mods）に対応した Claude Code。2.1.282 �
 ### 入れ方
 
 ```bash
-claude plugin marketplace add tomotos141/claude-code-overview
+claude plugin marketplace add https://github.com/tomotos141/claude-code-overview
 ```
 
 ```bash
-claude plugin install overview@claude-code-overview
+claude plugin install overview@claude-code-overview --config language=ja
 ```
+
+見出しを英語にしたいときは `--config language=ja` を外してください。
 
 新しいセッションを開くと、ペインが開きます（どこに置かれるかは Claude Code が決めます）。見当たらないときは `/overview` と打ってください。
 
 ### 設定
 
-`/config` で `language` を `ja` にすると、次のセッションからペインの見出しが日本語（目的・完了条件・派生・次の一手）になります。中身は、あなたが Claude と話している言葉で書かれます。
+`language` を `ja` にすると、次のセッションからペインの見出しが日本語（目的・完了条件・派生・次の一手）になります。入れるときに `--config language=ja` を付けるか、あとから `/plugin configure overview@claude-code-overview` で変えられます。中身は、あなたが Claude と話している言葉で書かれます。
 
 ### コツ
 

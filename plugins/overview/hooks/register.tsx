@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Board, Criterion, Offshoot } from '../types'
+import type { Board, Criterion, Issue, Offshoot } from '../types'
 
 const PANE = 'overview'
 
@@ -13,6 +13,8 @@ export type Lang = 'en' | 'ja'
 export const LABELS = {
   en: {
     title: 'Current task',
+    problem: 'Problem',
+    issue: 'Issue',
     goal: 'Goal',
     criteria: 'Done when',
     offshoots: 'Offshoots',
@@ -25,6 +27,8 @@ export const LABELS = {
   },
   ja: {
     title: 'いまの作業',
+    problem: '課題',
+    issue: 'issue',
     goal: '目的',
     criteria: '完了条件',
     offshoots: '派生',
@@ -43,7 +47,8 @@ export const langOf = (options: unknown): Lang =>
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
   'Update the "current task" pane the person watches to see the whole picture of their task.',
-  'Call it when a task is agreed (goal, completion criteria, next step), when a criterion is met,',
+  'Call it when a task is agreed (the problem it solves, goal, completion criteria, next step, and the issue tracking it if there is one),',
+  'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
   'Write every field in the language the person is using, short and concrete. Pass only the fields that changed;',
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
@@ -52,6 +57,16 @@ const GUIDE = [
 const INPUT_SCHEMA = {
   type: 'object',
   properties: {
+    problem: { type: 'string', description: 'The problem this task solves: what is wrong or missing now, in one or two sentences' },
+    issue: {
+      type: 'object',
+      description: 'The ticket tracking this task (a Linear or GitHub issue, say); an empty id removes it',
+      properties: {
+        id: { type: 'string', description: 'Its identifier, such as ABC-123 or #42' },
+        url: { type: 'string', description: 'Its link (optional)' },
+      },
+      required: ['id'],
+    },
     goal: { type: 'string', description: 'What the task is for, in one sentence' },
     criteria: {
       type: 'array',
@@ -77,6 +92,8 @@ const INPUT_SCHEMA = {
 }
 
 type UpdateInput = {
+  problem?: unknown
+  issue?: unknown
   goal?: unknown
   criteria?: unknown
   offshoots?: unknown
@@ -84,7 +101,7 @@ type UpdateInput = {
   clear?: unknown
 }
 
-const EMPTY: Board = { goal: '', criteria: [], offshoots: [], next: '', at: 0 }
+const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', at: 0 }
 // The pane is a glance, not a log: long lists and long lines are cut.
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
@@ -97,10 +114,21 @@ const clip = (s: string): string => {
 const hasText = (x: unknown): x is { text: string } =>
   typeof (x as { text?: unknown } | null)?.text === 'string' && (x as { text: string }).text.trim() !== ''
 
+// An issue as given: an object with an id sets it, an empty id removes it, anything else leaves it.
+const issueOf = (x: unknown): Issue | null | undefined => {
+  const id = (x as { id?: unknown } | null)?.id
+  if (typeof id !== 'string') return undefined
+  if (id.trim() === '') return null
+  const url = (x as { url?: unknown }).url
+  return { id: clip(id), url: typeof url === 'string' ? clip(url) : '' }
+}
+
 // The board after an update: given fields replace, missing ones stay.
 export const applyUpdate = (current: Board | null, input: UpdateInput, at: number): Board | null => {
   if (input.clear === true) return null
-  const base = current ?? EMPTY
+  // A board kept from an earlier version lacks the newer fields.
+  const base: Board = { ...EMPTY, ...current }
+  const issue = issueOf(input.issue)
   const criteria: Criterion[] | undefined = Array.isArray(input.criteria)
     ? input.criteria
         .filter(hasText)
@@ -117,6 +145,8 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
         })
     : undefined
   return {
+    problem: typeof input.problem === 'string' ? clip(input.problem) : base.problem,
+    issue: issue === undefined ? base.issue : issue,
     goal: typeof input.goal === 'string' ? clip(input.goal) : base.goal,
     criteria: criteria ?? base.criteria,
     offshoots: offshoots ?? base.offshoots,
@@ -128,7 +158,10 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
 // The board as the model reads it back in the tool's answer.
 export const summary = (b: Board | null): string => {
   if (b === null) return 'The pane is empty.'
-  const lines = b.goal === '' ? [] : [`goal: ${b.goal}`]
+  const lines: string[] = []
+  if (b.problem) lines.push(`problem: ${b.problem}`)
+  if (b.issue) lines.push(`issue: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}`)
+  if (b.goal !== '') lines.push(`goal: ${b.goal}`)
   for (const c of b.criteria) lines.push(`criterion [${c.isDone ? 'x' : ' '}] ${c.text}`)
   for (const o of b.offshoots) lines.push(`offshoot: ${o.text}${o.note === '' ? '' : ` (${o.note})`}`)
   if (b.next !== '') lines.push(`next: ${b.next}`)
@@ -200,6 +233,16 @@ export const register: Register = (on, options) => {
     const done = b.criteria.filter(c => c.isDone)
     return (
       <Box flexDirection="column" width={width}>
+        {section([heading(t.problem), <Text>{`  ${b.problem ? b.problem : t.unset}`}</Text>])}
+        {b.issue
+          ? section([
+              heading(t.issue),
+              <Text>
+                {`  ${b.issue.id}`}
+                {b.issue.url !== '' && <Text dimColor>{`  ${b.issue.url}`}</Text>}
+              </Text>,
+            ])
+          : null}
         {section([heading(t.goal), <Text>{`  ${b.goal === '' ? t.unset : b.goal}`}</Text>])}
         {section([
           heading(t.criteria, `${doneCount}/${b.criteria.length}`),

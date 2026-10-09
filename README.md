@@ -60,7 +60,7 @@ claude plugin install overview@claude-code-overview
 
 For Japanese headings, add `--config language=ja` to the install command.
 
-Then start a new session. The pane opens when the session starts, in the terminal and in the desktop app alike (Claude Code decides where it sits; a terminal narrower than 144 columns holds it back until it widens); if you don't see it, type `/overview`. Once you close it, it stays closed for the rest of the session unless you open it again.
+Then start a new session. The pane opens when the session starts, in the terminal and in the desktop app alike (Claude Code decides where it sits; a terminal narrower than 144 columns holds it back until it widens); if you don't see it, type `/overview`. Once you close it, it is not opened for you again until the plugin reloads (a new session, or a setting changed in `/config`).
 
 ## Settings
 
@@ -111,7 +111,7 @@ claude plugin install overview@claude-code-overview --config language=ja
 
 見出しを英語にしたいときは `--config language=ja` を外してください。
 
-新しいセッションを開くと、ターミナルでもデスクトップアプリでもペインが開きます（どこに置かれるかは Claude Code が決めます。ターミナルの幅が144桁より狭いときは、広がるまで待ちます）。見当たらないときは `/overview` と打ってください。一度閉じると、そのセッションのあいだは自分で開くまで閉じたままです。
+新しいセッションを開くと、ターミナルでもデスクトップアプリでもペインが開きます（どこに置かれるかは Claude Code が決めます。ターミナルの幅が144桁より狭いときは、広がるまで待ちます）。見当たらないときは `/overview` と打ってください。一度閉じると、plugin が読み込み直されるまで（新しいセッションを開く、`/config` で設定を変える など）は自動では開きません。
 
 ### 設定
 

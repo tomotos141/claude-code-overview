@@ -4,12 +4,22 @@ import { expect, test } from 'claude-code/testing'
 import { LABELS, barCells, barSvg, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
 
 // What the engine answers beneath the plugin when a session starts.
+// The tool is named after the plugin as installed, which need not be the name the module starts with.
+const INSTALLED = 'mcp__plugin_overview_overview__update'
 const engine = (on: On) => {
+  const registered: string[] = []
   on('session.start', async (_$, e) => ({ cwd: e.cwd }) as never)
   on('session.attach', async (_$, e) => ({ clientId: e.clientId, handle: 'h' }) as never)
-  on('command.register', async (_$, e) => ({ value: { command: e.name } }) as never)
-  on('tool.register', async () => ({ value: { tool: 'mcp__overview__update' } }) as never)
+  on('command.register', async (_$, e) => {
+    registered.push(`command:${e.name}`)
+    return { value: { command: e.name } } as never
+  })
+  on('tool.register', async (_$, e) => {
+    registered.push(`tool:${e.name}`)
+    return { value: { tool: INSTALLED } } as never
+  })
   on('prompt.compose', async () => ({ sections: [] }) as never)
+  return registered
 }
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -283,7 +293,9 @@ test('the issue opens from its id where it has a link, and is only named where i
 })
 
 test('the fill button asks Claude for what is missing, and is gone once nothing is', async ($, on) => {
-  on('clock.now', async () => ({ value: 0 }) as never)
+  // Each update a minute later, so the board after the second one is a new one.
+  let now = 0
+  on('clock.now', async () => ({ value: (now += 60_000) }) as never)
   const sent: string[] = []
   on('prompt.submit', async (_$, e) => {
     sent.push(e.text)
@@ -293,10 +305,17 @@ test('the fill button asks Claude for what is missing, and is gone once nothing 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     await ui.press({ key: 'fill' })
+    await ui.press({ key: 'fill' })
     await ui.unmount()
   }
+  // Pressed again before the board changes, it asks nothing more, whichever surface the press came from.
   const names = [LABELS.en.problem, LABELS.en.criteria, LABELS.en.next].join(' / ')
-  expect(sent).toEqual([LABELS.en.fillPrompt(names), LABELS.en.fillPrompt(names)])
+  expect(sent).toEqual([LABELS.en.fillPrompt(names)])
+  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p' } as never)
+  const again = await $.ui.mount({ plugin: 'overview', surface: 'desktop', ...PANE })
+  await again.press({ key: 'fill' })
+  await again.unmount()
+  expect(sent.at(-1)).toBe(LABELS.en.fillPrompt([LABELS.en.criteria, LABELS.en.next].join(' / ')))
 
   await $.tool.call({ tool: 'mcp__overview__update', problem: 'p', criteria: [{ text: 'c', done: false }], next: 'n' } as never)
   for (const surface of SURFACES) {
@@ -331,7 +350,7 @@ test('a bar is full only when every criterion is done, and empty only when none 
 })
 
 test('the session start offers the tool and the command and opens the pane once where someone watches', async ($, on) => {
-  engine(on)
+  const registered = engine(on)
   const opened: string[] = []
   on('ui.open', async (_$, e) => {
     opened.push(e.id)
@@ -346,7 +365,9 @@ test('the session start offers the tool and the command and opens the pane once 
   await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: false })
   await $.session.attach({ surface: 'mobile', clientId: 'phone' })
   expect(opened).toEqual(['overview'])
-  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
+  expect(registered.slice(0, 2)).toEqual(['command:overview', 'tool:update'])
+  // The tool answers under the name the engine handed back, and the old default name no longer reaches it.
+  const ran = await $.tool.call({ tool: INSTALLED, goal: 'g' } as never)
   expect(String(ran.text ?? ran.result)).toContain('goal: g')
   const command = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
   expect(command.text).toBe(LABELS.en.opened)
@@ -371,10 +392,14 @@ test('the composed system prompt carries the kickoff, and the tool is listed in 
   engine(on)
   on('tool.describe', async () => ({ description: 'd', isDeferred: true }) as never)
   await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: false })
-  const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', outputStyle: null, surfaces: ['desktop'], tools: ['mcp__overview__update'], traits: [] })
-  expect(composed.sections.map(s => s.id)).toContain('overview:kickoff')
-  const headless = await $.prompt.compose({ model: 'm', promptModel: 'm', outputStyle: null, surfaces: [], tools: ['mcp__overview__update'], traits: [] })
-  expect(headless.sections.map(s => s.id)).not.toContain('overview:kickoff')
-  const described = await $.tool.describe({ tool: 'mcp__overview__update', description: 'd' } as never)
-  expect(described.isDeferred).toBe(false)
+  const compose = (surfaces: readonly ('desktop')[], tools: readonly string[]) =>
+    $.prompt.compose({ model: 'm', promptModel: 'm', outputStyle: null, surfaces, tools, traits: [] })
+  const composed = await compose(['desktop'], [INSTALLED])
+  const kick = composed.sections.find(s => s.id === 'overview:kickoff')
+  expect(kick?.text).toContain(INSTALLED)
+  // Only the installed name counts: offered under the default name alone, the tool is not the plugin's.
+  expect((await compose(['desktop'], ['mcp__overview__update'])).sections.map(s => s.id)).not.toContain('overview:kickoff')
+  expect((await compose([], [INSTALLED])).sections.map(s => s.id)).not.toContain('overview:kickoff')
+  expect((await $.tool.describe({ tool: INSTALLED, description: 'd' } as never)).isDeferred).toBe(false)
+  expect((await $.tool.describe({ tool: 'mcp__other__update', description: 'd' } as never)).isDeferred).toBe(true)
 })

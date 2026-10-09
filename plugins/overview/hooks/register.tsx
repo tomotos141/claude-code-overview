@@ -314,6 +314,8 @@ export const register: Register = (on, options) => {
   // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
   // stays closed (a reload, such as a language change in the config menu, may open it once more).
   let isOpenedUnasked = false
+  // The board the fill button last asked about: pressed again before the board changes, it asks nothing more.
+  let fillAskedAt = -1
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'overview', description: 'Open the pane with the whole picture of the current task' })
@@ -416,7 +418,11 @@ export const register: Register = (on, options) => {
                 <Button
                   key="fill"
                   label={t.fill}
-                  onPress={() => void $.prompt.submit({ text: t.fillPrompt(missing.map(k => t[k]).join(' / ')) })}
+                  onPress={() => {
+                    if (fillAskedAt === b.at) return
+                    fillAskedAt = b.at
+                    void $.prompt.submit({ text: t.fillPrompt(missing.map(k => t[k]).join(' / ')) })
+                  }}
                 />
               </Box>,
             ])}
@@ -442,7 +448,12 @@ export const register: Register = (on, options) => {
           b.criteria.length === 0
             ? null
             : Svg !== undefined
-              ? <Svg source={barSvg(doneCount, b.criteria.length)} alt={t.progress(doneCount, b.criteria.length)} />
+              ? (
+                  // Set in as far as the lines of text are.
+                  <Box marginLeft={2}>
+                    <Svg source={barSvg(doneCount, b.criteria.length)} alt={t.progress(doneCount, b.criteria.length)} />
+                  </Box>
+                )
               : <Text color="success">{`  ${barCells(doneCount, b.criteria.length, Math.min(20, width - 4))}`}</Text>,
           ...left.map(c => <Text>{`  ○ ${c.text}`}</Text>),
           ...done.map(c => (

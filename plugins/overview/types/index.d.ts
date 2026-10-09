@@ -1,6 +1,17 @@
 export type Criterion = { text: string; isDone: boolean }
 export type Offshoot = { text: string; note: string }
-export type Board = { goal: string; criteria: Criterion[]; offshoots: Offshoot[]; next: string; at: number }
+export type Issue = { id: string; url: string }
+export type Close = { isOk: boolean; reason: string }
+export type Board = {
+  problem: string
+  issue: Issue | null
+  goal: string
+  criteria: Criterion[]
+  offshoots: Offshoot[]
+  next: string
+  close: Close | null
+  at: number
+}
 
 declare module 'claude-code' {
   interface PluginState {

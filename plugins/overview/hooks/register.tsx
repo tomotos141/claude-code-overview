@@ -68,6 +68,9 @@ const GUIDE = [
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
 ].join(' ')
 
+// A link is never cut, but one this long is not a link.
+const MAX_URL_CHARS = 2048
+
 const INPUT_SCHEMA = {
   type: 'object',
   properties: {
@@ -77,7 +80,7 @@ const INPUT_SCHEMA = {
       description: 'The Linear issue tracking this task; an empty id removes it',
       properties: {
         id: { type: 'string', description: 'Its identifier, such as ABC-123' },
-        url: { type: 'string', description: 'Its link (optional). Omitted: kept if the id is unchanged, otherwise none. Empty: removed.' },
+        url: { type: 'string', maxLength: MAX_URL_CHARS, description: `Its link (optional, up to ${MAX_URL_CHARS} characters; a longer one makes the whole issue ignored). Omitted: kept if the id is unchanged, otherwise none. Empty: removed.` },
       },
       required: ['id'],
     },
@@ -110,7 +113,7 @@ const INPUT_SCHEMA = {
       },
     },
     next: { type: 'string', description: 'The next step, in one sentence' },
-    clear: { type: 'boolean', description: 'true empties the pane (when the task is over); a close sent with it stays, and so does a not-ok one already shown' },
+    clear: { type: 'boolean', description: 'true empties the pane (when the task is over); a close sent with it replaces the one shown, and without one a not-ok close already shown stays' },
   },
 }
 
@@ -129,13 +132,12 @@ const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoo
 // The pane is a glance, not a log: long lists and long lines are cut.
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
-// A link is never cut, but one this long is not a link.
-const MAX_URL_CHARS = 2048
 
 const clip = (s: string): string => {
   // One line each, so a line break cannot pass for another field when the board is read back.
   // By code point, so an emoji is never cut in half.
-  const chars = Array.from(s.replace(/\s+/g, ' ').trim())
+  // \s leaves out NEL and the information separators, which some readers also break lines on.
+  const chars = Array.from(s.replace(/[\s\u0085\u001c-\u001f]+/g, ' ').trim())
   return chars.length > MAX_CHARS ? `${chars.slice(0, MAX_CHARS - 1).join('')}…` : chars.join('')
 }
 const hasText = (x: unknown): x is { text: string } =>

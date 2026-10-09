@@ -221,6 +221,9 @@ test('the system prompt asks for the pane on the first request, only in a watche
   expect(added.at(-1)?.text).toContain(tool)
   expect(added.at(-1)?.text).toContain('first request')
   expect(withKickoff(added, watched, tool)).toHaveLength(2)
+  // The desktop app composes with the print trait (seen in a real session: lean|print|skills, surface desktop),
+  // so print alone must not drop the kickoff; whether anything draws decides.
+  expect(withKickoff(base, { ...watched, traits: ['lean', 'print', 'skills'] }, tool)).toHaveLength(2)
   // Not where the tool is missing, nobody watches (-p, a bare SDK run), a teammate works, or --bare.
   expect(withKickoff(base, { ...watched, tools: ['Bash'] }, tool)).toBe(base)
   expect(withKickoff(base, { ...watched, surfaces: [] }, tool)).toBe(base)

@@ -56,8 +56,12 @@ const GUIDE = [
   'Call it when a task is agreed (the problem it solves, goal, completion criteria, next step, and the Linear issue tracking it if there is one),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
-  'Keep close current too: whether the person can close this session now without losing anything, and why',
-  '(uncommitted or unpushed work, something still running, a reply or approval still awaited keep it open).',
+  'The goal is why the work is done (the purpose it serves), not the deliverable or the steps; those are criteria.',
+  'close says whether the person can close this session now without losing anything, and why.',
+  'Set it to not ok when you start editing, start something that keeps running, or begin waiting for a reply or approval;',
+  'set it to ok once the work is committed and pushed, nothing is running and nothing is awaited.',
+  'When the task ends, send clear together with close, so the pane keeps telling whether the session can be closed.',
+  'A later update that changes anything else drops an ok close, since the work has moved on: send close again with it.',
   'Write every field in the language the person is using, short and concrete. Pass only the fields that changed;',
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
 ].join(' ')
@@ -65,7 +69,7 @@ const GUIDE = [
 const INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    problem: { type: 'string', description: 'The problem this task solves: what is wrong or missing now, in one or two sentences' },
+    problem: { type: 'string', description: 'The problem this task solves: what is wrong or missing now, in a sentence' },
     issue: {
       type: 'object',
       description: 'The Linear issue tracking this task; an empty id removes it',
@@ -84,7 +88,7 @@ const INPUT_SCHEMA = {
       },
       required: ['ok'],
     },
-    goal: { type: 'string', description: 'What the task is for, in one sentence' },
+    goal: { type: 'string', description: 'Why the work is done: the purpose it serves, in one sentence (not the deliverable)' },
     criteria: {
       type: 'array',
       description: 'Completion criteria; replaces the whole list when given',
@@ -104,7 +108,7 @@ const INPUT_SCHEMA = {
       },
     },
     next: { type: 'string', description: 'The next step, in one sentence' },
-    clear: { type: 'boolean', description: 'true empties the pane (when the task is over)' },
+    clear: { type: 'boolean', description: 'true empties the pane (when the task is over); a close sent with it stays' },
   },
 }
 
@@ -153,12 +157,20 @@ const closeOf = (x: unknown): Close | undefined => {
 // A board kept from an earlier version, across a reload, lacks the newer fields.
 export const normalize = (b: Board | null): Board | null => (b === null ? null : { ...EMPTY, ...b })
 
+// Whether a board holds no task, only (at most) whether the session can be closed.
+export const isBlank = (b: Board): boolean =>
+  b.problem === '' && b.issue === null && b.goal === '' && b.criteria.length === 0 && b.offshoots.length === 0 && b.next === ''
+
 // The board after an update: given fields replace, missing ones stay.
 export const applyUpdate = (current: Board | null, input: UpdateInput, at: number): Board | null => {
-  if (input.clear === true) return null
+  const close = closeOf(input.close)
+  // A finished task leaves the pane empty but for whether the session can be closed, when that was given with it.
+  if (input.clear === true) return close === undefined ? null : { ...EMPTY, close, at }
   const base = normalize(current) ?? EMPTY
   const issue = issueOf(input.issue)
-  const close = closeOf(input.close)
+  const isWorkChanged = (['problem', 'issue', 'goal', 'criteria', 'offshoots', 'next'] as const).some(k => input[k] !== undefined)
+  // An ok close is only as good as the moment it was judged: once the work moves on it no longer holds.
+  const keptClose = isWorkChanged && base.close?.isOk === true ? null : base.close
   const criteria: Criterion[] | undefined = Array.isArray(input.criteria)
     ? input.criteria
         .filter(hasText)
@@ -181,7 +193,7 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
     criteria: criteria ?? base.criteria,
     offshoots: offshoots ?? base.offshoots,
     next: typeof input.next === 'string' ? clip(input.next) : base.next,
-    close: close ?? base.close,
+    close: close ?? keptClose,
     at,
   }
 }
@@ -197,7 +209,8 @@ export const summary = (kept: Board | null): string => {
   for (const c of b.criteria) lines.push(`criterion [${c.isDone ? 'x' : ' '}] ${c.text}`)
   for (const o of b.offshoots) lines.push(`offshoot: ${o.text}${o.note === '' ? '' : ` (${o.note})`}`)
   if (b.next !== '') lines.push(`next: ${b.next}`)
-  if (b.close) lines.push(`close: ${b.close.isOk ? 'ok' : 'not yet'}${b.close.reason === '' ? '' : ` (${b.close.reason})`}`)
+  if (b.close !== null) lines.push(`close: ${b.close.isOk ? 'ok' : 'not yet'}${b.close.reason === '' ? '' : ` (${b.close.reason})`}`)
+  if (isBlank(b)) lines.unshift('The pane is empty.')
   return lines.length === 0 ? 'The pane is empty.' : lines.join('\n')
 }
 
@@ -254,10 +267,20 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    if (b === null)
+    const session =
+      b?.close
+        ? section([
+            heading(t.close),
+            <Text color={b.close.isOk ? 'success' : 'warning'}>{`  ${b.close.isOk ? `✓ ${t.closeOk}` : `✗ ${t.closeNo}`}`}</Text>,
+            b.close.reason === '' ? null : quiet(b.close.reason),
+          ])
+        : null
+
+    if (b === null || isBlank(b))
       return (
         <Box flexDirection="column" width={width}>
           {section([heading(t.goal), quiet(t.empty)])}
+          {session}
         </Box>
       )
 
@@ -270,10 +293,9 @@ export const register: Register = (on, options) => {
         {b.issue
           ? section([
               heading(t.issue),
-              <Text>
-                {`  ${b.issue.id}`}
-                {b.issue.url !== '' && <Text dimColor>{`  ${b.issue.url}`}</Text>}
-              </Text>,
+              <Text>{`  ${b.issue.id}`}</Text>,
+              // On a line of its own, so a narrow pane wraps the link less.
+              b.issue.url === '' ? null : quiet(b.issue.url),
             ])
           : null}
         {section([heading(t.goal), <Text>{`  ${b.goal === '' ? t.unset : b.goal}`}</Text>])}
@@ -303,15 +325,7 @@ export const register: Register = (on, options) => {
           heading(t.next),
           b.next === '' ? quiet(t.none) : <Text bold color="suggestion">{`  → ${b.next}`}</Text>,
         ])}
-        {b.close
-          ? section([
-              heading(t.close),
-              <Text color={b.close.isOk ? 'success' : 'warning'}>
-                {`  ${b.close.isOk ? '✓' : '✗'} ${b.close.isOk ? t.closeOk : t.closeNo}`}
-                {b.close.reason !== '' && <Text dimColor>{`  ${b.close.reason}`}</Text>}
-              </Text>,
-            ])
-          : null}
+        {session}
         <Text dimColor>{`  ${t.updated} ${clock(b.at)}`}</Text>
       </Box>
     )

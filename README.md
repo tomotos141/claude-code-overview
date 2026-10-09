@@ -1,6 +1,6 @@
 # claude-code-overview
 
-A pane for Claude Code that keeps the current task in view: **the problem it solves, what it is for, what "done" means, what branched off, and what comes next** — with the Linear issue that tracks it, if there is one, and whether the session can be closed. Claude writes it as the work moves, so a long session never loses its thread.
+A pane for Claude Code that keeps the current task in view: the Linear issue that tracks it, if there is one, then **the problem it solves, what it is for, what "done" means, what branched off, and what comes next**, and whether the session can be closed. Claude writes it as the work moves, so a long session never loses its thread.
 
 ```
 Linear issue
@@ -72,7 +72,7 @@ It sets the language of the pane's own headings. Claude writes the contents in w
 ## Tips
 
 - If the pane falls behind, just ask Claude to update it.
-- Claude is asked to clear the pane when a task is over, leaving only whether the session can be closed. If the task itself is still shown, ask it to.
+- Claude is asked to clear the pane when a task is over: it then shows only the placeholder line and whether the session can be closed. If the task itself is still shown, ask it to.
 
 ## License
 
@@ -118,7 +118,7 @@ claude plugin install overview@claude-code-overview --config language=ja
 ### コツ
 
 - ペインの更新が遅れていたら、「ペインを更新して」と頼んでください。
-- 作業が終わったら、Claude がペインを空にして「セッション」の欄だけ残すよう指示してあります。作業の中身が残っていたら、空にするよう頼んでください。
+- 作業が終わったら、Claude がペインを空にするよう指示してあります。空になると、案内の1行と「セッション」の欄だけが出ます。作業の中身が残っていたら、空にするよう頼んでください。
 
 ### ライセンス
 

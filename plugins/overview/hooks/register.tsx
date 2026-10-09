@@ -57,7 +57,7 @@ const GUIDE = [
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
   'The problem is what is wrong or missing now. The goal is why the work is done: what solving the problem achieves for someone,',
-  'not a restatement of the problem, and not the deliverable or the steps (those are criteria).',
+  'not a restatement of the problem, and not the deliverable (that belongs in criteria) or the steps (the next one goes in next).',
   'close says whether the person can close this session now without losing anything, and why.',
   'Set it to not ok when you start changing files or anything else, start something that keeps running,',
   'or begin waiting for a reply or approval; set it to ok once nothing would be lost (changes committed and pushed',
@@ -77,7 +77,7 @@ const INPUT_SCHEMA = {
       description: 'The Linear issue tracking this task; an empty id removes it',
       properties: {
         id: { type: 'string', description: 'Its identifier, such as ABC-123' },
-        url: { type: 'string', description: 'Its link (optional; left out with the same id, the link stays; an empty url removes it)' },
+        url: { type: 'string', description: 'Its link (optional). Omitted: kept if the id is unchanged, otherwise none. Empty: removed.' },
       },
       required: ['id'],
     },
@@ -129,10 +129,13 @@ const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoo
 // The pane is a glance, not a log: long lists and long lines are cut.
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
+// A link is never cut, but one this long is not a link.
+const MAX_URL_CHARS = 2048
 
 const clip = (s: string): string => {
+  // One line each, so a line break cannot pass for another field when the board is read back.
   // By code point, so an emoji is never cut in half.
-  const chars = Array.from(s.trim())
+  const chars = Array.from(s.replace(/\s+/g, ' ').trim())
   return chars.length > MAX_CHARS ? `${chars.slice(0, MAX_CHARS - 1).join('')}…` : chars.join('')
 }
 const hasText = (x: unknown): x is { text: string } =>
@@ -147,7 +150,9 @@ const issueOf = (x: unknown, current: Issue | null): Issue | null | undefined =>
   const url = (x as { url?: unknown }).url
   const sameId = current !== null && current.id === clip(id)
   // A link is kept whole, without spaces or line breaks: cut, it would no longer open.
-  return { id: clip(id), url: typeof url === 'string' ? url.replace(/\s/g, '') : sameId ? current.url : '' }
+  const link = typeof url === 'string' ? url.replace(/\s/g, '') : undefined
+  if (link !== undefined && link.length > MAX_URL_CHARS) return undefined
+  return { id: clip(id), url: link ?? (sameId ? current.url : '') }
 }
 
 // Whether the session can be closed, as given: an object with a boolean ok sets it, anything else leaves it.

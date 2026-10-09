@@ -36,6 +36,11 @@ test('the problem and the Linear issue are kept until replaced or removed', () =
   expect(applyUpdate(second, { issue: { id: 'ABC-12' } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
   expect(applyUpdate(second, { issue: { id: 'ABC-12', url: '' } }, 3)?.issue).toEqual({ id: 'ABC-12', url: '' })
   expect(applyUpdate(null, { issue: { id: 'ABC-1', url: ' https://x.y/a\nb ' } }, 3)?.issue).toEqual({ id: 'ABC-1', url: 'https://x.y/ab' })
+  expect(applyUpdate(second, { issue: { id: 'ABC-12', url: 42 } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
+  // Something far too long to be a link is not taken at all.
+  expect(applyUpdate(second, { issue: { id: 'ABC-99', url: `https://x.y/${'a'.repeat(3000)}` } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
+  // A line break cannot make a field pass for another one when the board is read back.
+  expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok')
   expect(applyUpdate(second, { issue: { id: '' } }, 3)?.issue).toBe(null)
   expect(applyUpdate(second, { issue: { id: '  ' } }, 3)?.issue).toBe(null)
   for (const ignored of ['ABC-13', null, { id: 42 }, { url: 'https://example.com' }])
@@ -59,7 +64,7 @@ test('keep it open stays until replaced; safe to close lasts only until the work
   ]
   for (const sent of work) expect(applyUpdate(safe, sent, 4)?.close).toBe(null)
   // Values that are ignored change nothing, so they leave it.
-  for (const ignored of [{ issue: 'ABC-13' }, { issue: null }, { criteria: 'x' }, { problem: null }, {}])
+  for (const ignored of [{ issue: 'ABC-13' }, { issue: null }, { issue: { id: 42 } }, { criteria: 'x' }, { offshoots: 'x' }, { problem: null }, {}])
     expect(applyUpdate(safe, ignored, 4)?.close).toEqual({ isOk: true, reason: '' })
   expect(applyUpdate(safe, { next: 'One more fix', close: { ok: false, reason: 'editing' } }, 4)?.close).toEqual({ isOk: false, reason: 'editing' })
 })
@@ -71,6 +76,10 @@ test('clearing a finished task keeps the close sent with it, or a keep it open a
   for (const sent of [{ clear: true }, { clear: true, close: { ok: 'yes' } }])
     expect(applyUpdate(open, sent, 3)?.close).toEqual({ isOk: false, reason: 'deploy running' })
   expect(applyUpdate(applyUpdate(b, { close: { ok: true } }, 2), { clear: true }, 3)).toBe(null)
+  // The close sent with clear wins over the "keep it open" it answers.
+  expect(applyUpdate(open, { clear: true, close: { ok: true, reason: 'pushed' } }, 3)?.close).toEqual({ isOk: true, reason: 'pushed' })
+  // A "keep it open" carried through clear still stands when the next task starts.
+  expect(applyUpdate(applyUpdate(open, { clear: true }, 3), { goal: 'next task' }, 4)?.close).toEqual({ isOk: false, reason: 'deploy running' })
   const cleared = applyUpdate(b, { clear: true, close: { ok: true, reason: 'pushed and merged' } }, 2)
   expect(cleared).toEqual({ problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: { isOk: true, reason: 'pushed and merged' }, at: 2 })
   expect(summary(cleared)).toBe('The pane is empty.\nclose: ok (pushed and merged)')

@@ -28,8 +28,6 @@ export const LABELS = {
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
     opened: 'Opened the Overview pane.',
-    fill: 'Fill in what is missing',
-    fillPrompt: (fields: string) => `Fill in what the Overview pane still lacks (${fields}) as far as you can tell, and ask me about what you cannot.`,
     progress: (done: number, total: number) => `${done} of ${total} done`,
   },
   ja: {
@@ -49,8 +47,6 @@ export const LABELS = {
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
     opened: 'Overview のペインを開きました。',
-    fill: '足りない欄を埋めて',
-    fillPrompt: (fields: string) => `Overview の足りない欄（${fields}）を、わかる範囲で埋めてください。わからない欄は質問してください。`,
     progress: (done: number, total: number) => `${total}件中${done}件完了`,
   },
 } as const
@@ -314,8 +310,6 @@ export const register: Register = (on, options) => {
   // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
   // stays closed (a reload, such as a language change in the config menu, may open it once more).
   let isOpenedUnasked = false
-  // The board the fill button last asked about: pressed again before the board changes, it asks nothing more.
-  let fillAskedAt = -1
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'overview', description: 'Open the pane with the whole picture of the current task' })
@@ -365,7 +359,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
-    const { Box, Text, Button, Link } = elements
+    const { Box, Text, Link } = elements
     // The terminal draws no SVG; the bar is drawn in cells there.
     const Svg = e.surface === 'terminal' ? undefined : (elements as Elements['desktop']).Svg
     const b = normalize(await read($, board))
@@ -413,19 +407,6 @@ export const register: Register = (on, options) => {
           ? null
           : section([
               <Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>,
-              // Asks Claude in the person's stead, as a turn of its own once the session is idle.
-              <Box marginTop={1}>
-                <Button
-                  key="fill"
-                  label={t.fill}
-                  variant="primary"
-                  onPress={() => {
-                    if (fillAskedAt === b.at) return
-                    fillAskedAt = b.at
-                    void $.prompt.submit({ text: t.fillPrompt(missing.map(k => t[k]).join(' / ')) })
-                  }}
-                />
-              </Box>,
             ])}
         {b.issue
           ? section([

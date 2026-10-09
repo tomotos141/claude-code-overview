@@ -418,6 +418,7 @@ export const register: Register = (on, options) => {
                 <Button
                   key="fill"
                   label={t.fill}
+                  variant="primary"
                   onPress={() => {
                     if (fillAskedAt === b.at) return
                     fillAskedAt = b.at

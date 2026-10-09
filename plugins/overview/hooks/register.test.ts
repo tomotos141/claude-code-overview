@@ -292,37 +292,13 @@ test('the issue opens from its id where it has a link, and is only named where i
   }
 })
 
-test('the fill button asks Claude for what is missing, and is gone once nothing is', async ($, on) => {
-  // Each update a minute later, so the board after the second one is a new one.
-  let now = 0
-  on('clock.now', async () => ({ value: (now += 60_000) }) as never)
-  const sent: string[] = []
-  on('prompt.submit', async (_$, e) => {
-    sent.push(e.text)
-    return { drop: 'test' } as never
-  })
+test('the missing line stands alone: the pane offers no button to fill it', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
   await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
-    // Drawn as the main action, so it reads as a button beside the warning line above it.
-    expect((await ui.find({ type: 'Button', key: 'fill' }))?.props.variant).toBe('primary')
-    await ui.press({ key: 'fill' })
-    await ui.press({ key: 'fill' })
-    await ui.unmount()
-  }
-  // Pressed again before the board changes, it asks nothing more, whichever surface the press came from.
-  const names = [LABELS.en.problem, LABELS.en.criteria, LABELS.en.next].join(' / ')
-  expect(sent).toEqual([LABELS.en.fillPrompt(names)])
-  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p' } as never)
-  const again = await $.ui.mount({ plugin: 'overview', surface: 'desktop', ...PANE })
-  await again.press({ key: 'fill' })
-  await again.unmount()
-  expect(sent.at(-1)).toBe(LABELS.en.fillPrompt([LABELS.en.criteria, LABELS.en.next].join(' / ')))
-
-  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p', criteria: [{ text: 'c', done: false }], next: 'n' } as never)
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
-    expect(await ui.find({ type: 'Button', key: 'fill' })).toBe(undefined)
+    expect(await ui.find({ type: 'Text', text: new RegExp(LABELS.en.missing) })).toBeDefined()
+    expect(await ui.findAll({ type: 'Button' })).toEqual([])
     await ui.unmount()
   }
 })

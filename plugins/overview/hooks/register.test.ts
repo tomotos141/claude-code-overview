@@ -304,6 +304,8 @@ test('the fill button asks Claude for what is missing, and is gone once nothing 
   await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    // Drawn as the main action, so it reads as a button beside the warning line above it.
+    expect((await ui.find({ type: 'Button', key: 'fill' }))?.props.variant).toBe('primary')
     await ui.press({ key: 'fill' })
     await ui.press({ key: 'fill' })
     await ui.unmount()

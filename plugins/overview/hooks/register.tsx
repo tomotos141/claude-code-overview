@@ -80,7 +80,7 @@ const INPUT_SCHEMA = {
       description: 'The Linear issue tracking this task; an empty id removes it',
       properties: {
         id: { type: 'string', description: 'Its identifier, such as ABC-123' },
-        url: { type: 'string', maxLength: MAX_URL_CHARS, description: `Its link (optional, up to ${MAX_URL_CHARS} characters; a longer one makes the whole issue ignored). Omitted: kept if the id is unchanged, otherwise none. Empty: removed.` },
+        url: { type: 'string', description: `Its link (optional, up to ${MAX_URL_CHARS} characters; a longer one makes the whole issue ignored). Omitted: kept if the id is unchanged, otherwise none. Empty: removed.` },
       },
       required: ['id'],
     },
@@ -133,26 +133,28 @@ const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoo
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
 
+// Spaces and line breaks, with NEL and the information separators that \s leaves out but some readers break lines on.
+const SEPARATORS = /[\s\u0085\u001c-\u001f]+/g
+
 const clip = (s: string): string => {
   // One line each, so a line break cannot pass for another field when the board is read back.
   // By code point, so an emoji is never cut in half.
-  // \s leaves out NEL and the information separators, which some readers also break lines on.
-  const chars = Array.from(s.replace(/[\s\u0085\u001c-\u001f]+/g, ' ').trim())
+  const chars = Array.from(s.replace(SEPARATORS, ' ').trim())
   return chars.length > MAX_CHARS ? `${chars.slice(0, MAX_CHARS - 1).join('')}…` : chars.join('')
 }
 const hasText = (x: unknown): x is { text: string } =>
-  typeof (x as { text?: unknown } | null)?.text === 'string' && (x as { text: string }).text.trim() !== ''
+  typeof (x as { text?: unknown } | null)?.text === 'string' && clip((x as { text: string }).text) !== ''
 
 // An issue as given: an object with an id sets it, an empty id removes it, anything else leaves it.
 // Its link left out, the current one stays when the id is the same.
 const issueOf = (x: unknown, current: Issue | null): Issue | null | undefined => {
   const id = (x as { id?: unknown } | null)?.id
   if (typeof id !== 'string') return undefined
-  if (id.trim() === '') return null
+  if (clip(id) === '') return null
   const url = (x as { url?: unknown }).url
   const sameId = current !== null && current.id === clip(id)
   // A link is kept whole, without spaces or line breaks: cut, it would no longer open.
-  const link = typeof url === 'string' ? url.replace(/\s/g, '') : undefined
+  const link = typeof url === 'string' ? url.replace(SEPARATORS, '') : undefined
   if (link !== undefined && link.length > MAX_URL_CHARS) return undefined
   return { id: clip(id), url: link ?? (sameId ? current.url : '') }
 }

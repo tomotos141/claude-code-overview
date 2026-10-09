@@ -41,7 +41,11 @@ test('the problem and the Linear issue are kept until replaced or removed', () =
   expect(applyUpdate(second, { issue: { id: 'ABC-99', url: `https://x.y/${'a'.repeat(3000)}` } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
   // A line break cannot make a field pass for another one when the board is read back.
   expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok')
-  expect(applyUpdate(null, { problem: 'a\r\nb\u2028c\td\u0085e\u001ef' }, 3)?.problem).toBe('a b c d e f')
+  expect(applyUpdate(null, { problem: 'a\r\nb\u2028c\td\u0085e\u001cf\u001fg' }, 3)?.problem).toBe('a b c d e f g')
+  expect(applyUpdate(null, { issue: { id: 'ABC-1', url: 'https://x.y/a\u0085b\u001c' } }, 3)?.issue?.url).toBe('https://x.y/ab')
+  // Only separators is as good as empty.
+  expect(applyUpdate(second, { issue: { id: '\u001e\u0085' } }, 3)?.issue).toBe(null)
+  expect(applyUpdate(null, { criteria: [{ text: '\u0085', done: false }] }, 3)?.criteria).toEqual([])
   // The link limit counts after spaces are taken out, and stops at exactly the limit.
   const at = (n: number) => `https://x.y/${'a'.repeat(n - 'https://x.y/'.length)}`
   expect(applyUpdate(null, { issue: { id: 'ABC-1', url: at(2048) } }, 3)?.issue?.url).toHaveLength(2048)

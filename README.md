@@ -72,7 +72,7 @@ It sets the language of the pane's own headings. Claude writes the contents in w
 ## Tips
 
 - If the pane falls behind, just ask Claude to update it.
-- Claude is asked to clear the pane when a task is over: it then shows only the Goal heading with its placeholder line, plus the Session section when Claude sends it along (as it is told to). If the task itself is still shown, ask it to.
+- Claude is asked to clear the pane when a task is over: it then shows only the Goal heading with its placeholder line, plus the Session section when Claude sends it along (as it is told to) or a "keep it open" was already shown. If the task itself is still shown, ask it to.
 
 ## License
 
@@ -118,7 +118,7 @@ claude plugin install overview@claude-code-overview --config language=ja
 ### コツ
 
 - ペインの更新が遅れていたら、「ペインを更新して」と頼んでください。
-- 作業が終わったら、Claude がペインを空にするよう指示してあります。空になると「目的」の見出しと案内の1行だけになり、Claude が一緒に送れば（そう指示してあります）「セッション」の欄も残ります。作業の中身が残っていたら、空にするよう頼んでください。
+- 作業が終わったら、Claude がペインを空にするよう指示してあります。空になると「目的」の見出しと案内の1行だけになり、Claude が一緒に送れば（そう指示してあります）、または「まだ閉じない」が出ていれば、「セッション」の欄も残ります。作業の中身が残っていたら、空にするよう頼んでください。
 
 ### ライセンス
 

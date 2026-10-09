@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
+import type { EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
 
 import type { Board, Close, Criterion, Issue, Offshoot } from '../types'
 
@@ -12,7 +12,7 @@ export type Lang = 'en' | 'ja'
 // The pane's own words; the contents are Claude's, in whatever language the person uses.
 export const LABELS = {
   en: {
-    title: 'Current task',
+    title: 'Overview',
     problem: 'Problem',
     issue: 'Linear issue',
     goal: 'Goal',
@@ -27,10 +27,10 @@ export const LABELS = {
     missing: 'Still missing',
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
-    opened: 'Opened the current task pane.',
+    opened: 'Opened the Overview pane.',
   },
   ja: {
-    title: 'いまの作業',
+    title: 'Overview',
     problem: '課題',
     issue: 'Linear issue',
     goal: '目的',
@@ -45,7 +45,7 @@ export const LABELS = {
     missing: 'まだ足りない',
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
-    opened: 'いまの作業のペインを開きました。',
+    opened: 'Overview のペインを開きました。',
   },
 } as const
 
@@ -54,7 +54,7 @@ export const langOf = (options: unknown): Lang =>
 
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
-  'Update the "current task" pane the person watches to see the whole picture of their task.',
+  'Update the Overview pane the person watches to see the whole picture of their task.',
   'Call it when a task is agreed (the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
@@ -75,16 +75,24 @@ export const kickoff = (tool: string): PromptComposeSection => ({
   id: 'overview:kickoff',
   scope: 'session',
   text: [
-    `The person keeps a "current task" pane in view, written through the ${tool} tool.`,
-    'When they bring a task, the first request of the session included, call it before you start the work, without being asked:',
+    `The person keeps an Overview pane of their current task in view, written through the ${tool} tool.`,
+    'When they bring a task to work on (not a quick question), the first request of the session included, call it before you start the work, without being asked:',
     'the problem, goal, completion criteria and next step as far as the request tells them. Leave out what you cannot tell rather than guess;',
     'the pane marks what is still missing, and you fill it in once you learn it. Then keep it current as the tool describes.',
   ].join(' '),
 })
 
-// The system prompt with the kickoff added last, where the tool is offered; left alone otherwise.
-export const withKickoff = (sections: readonly PromptComposeSection[], tools: readonly string[], tool: string): readonly PromptComposeSection[] =>
-  tools.includes(tool) ? [...sections.filter(s => s.id !== 'overview:kickoff'), kickoff(tool)] : sections
+// The system prompt with the kickoff added last, only for the main conversation of a session someone watches
+// with the tool offered: not a -p run or the SDK drawing nowhere, not a teammate (it would overwrite the
+// person's task with its own), not --bare. Left alone otherwise.
+export const withKickoff = (
+  sections: readonly PromptComposeSection[],
+  e: Pick<PromptComposeInput, 'tools' | 'surfaces' | 'traits'>,
+  tool: string,
+): readonly PromptComposeSection[] =>
+  e.tools.includes(tool) && e.surfaces.length > 0 && !e.traits.includes('teammate') && !e.traits.includes('bare')
+    ? [...sections.filter(s => s.id !== 'overview:kickoff'), kickoff(tool)]
+    : sections
 
 // Whether someone watches at start: a person at the REPL, or a surface that draws (the desktop app runs
 // the session as an SDK, so isInteractive is false there while the surface is not).
@@ -277,7 +285,8 @@ export const register: Register = (on, options) => {
   const t = LABELS[langOf(options)]
   // The engine names the tool after the plugin as installed; keep the name it hands back.
   let toolName = 'mcp__overview__update'
-  // Opened once unasked; after that only the person opens it, so a pane they closed stays closed.
+  // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
+  // stays closed (a reload, such as a language change in the config menu, may open it once more).
   let isOpenedUnasked = false
 
   on('session.start', async ($, e, next) => {
@@ -302,7 +311,13 @@ export const register: Register = (on, options) => {
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
-    return { sections: withKickoff(composed.sections, e.tools, toolName) }
+    return { sections: withKickoff(composed.sections, e, toolName) }
+  })
+
+  // Listed in front rather than behind ToolSearch, so the kickoff's first call needs no lookup.
+  on('tool.describe', async ($, e, next) => {
+    const described = await next(e)
+    return e.tool === toolName ? { ...described, isDeferred: false } : described
   })
 
   on('command.run', { command: 'overview' }, async $ => {
@@ -312,6 +327,8 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     if (e.tool !== toolName) return next(e)
+    // The pane is the person's task: a subagent or teammate writing its own would overwrite it.
+    if (e.agentId !== undefined) return { result: 'Only the main conversation writes the pane; it was left as it is.' }
     const at = await $.clock.now()
     let written: Board | null = null
     await update($, board, current => (written = applyUpdate(current, e as UpdateInput, at)))

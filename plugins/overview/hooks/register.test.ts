@@ -4,7 +4,7 @@ import { expect, test } from 'claude-code/testing'
 import { LABELS, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
 
 const SURFACES = ['terminal', 'desktop'] as const
-const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Current task', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
+const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Overview', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
 
 test('an update replaces what it names and keeps the rest', () => {
   const first = applyUpdate(null, { goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', done: false }], next: 'Write it' }, 1)
@@ -201,7 +201,7 @@ test('/overview opens the pane, titled in English by default', async ($, on) => 
   })
   const ran = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
   expect(ran.text).toBe(LABELS.en.opened)
-  expect(opened).toEqual(['Current task'])
+  expect(opened).toEqual(['Overview'])
 })
 
 test('the pane opens unasked where someone watches: the REPL, or a surface such as the desktop app', () => {
@@ -211,16 +211,31 @@ test('the pane opens unasked where someone watches: the REPL, or a surface such 
   expect(isWatched({ isInteractive: false, surface: null })).toBe(false)
 })
 
-test('the system prompt asks for the pane on the first request, only where the tool is offered', () => {
+test('the system prompt asks for the pane on the first request, only in a watched main conversation', () => {
   const base = [{ id: 'intro', text: 'i', scope: 'shared' }] as const
-  const added = withKickoff(base, ['mcp__overview__update'], 'mcp__overview__update')
+  const tool = 'mcp__overview__update'
+  const watched = { tools: [tool], surfaces: ['desktop'], traits: [] } as const
+  const added = withKickoff(base, watched, tool)
   expect(added.map(s => s.id)).toEqual(['intro', 'overview:kickoff'])
   expect(added.at(-1)?.scope).toBe('session')
-  expect(added.at(-1)?.text).toContain('mcp__overview__update')
+  expect(added.at(-1)?.text).toContain(tool)
   expect(added.at(-1)?.text).toContain('first request')
-  expect(withKickoff(added, ['mcp__overview__update'], 'mcp__overview__update')).toHaveLength(2)
-  expect(withKickoff(base, ['Bash'], 'mcp__overview__update')).toBe(base)
+  expect(withKickoff(added, watched, tool)).toHaveLength(2)
+  // Not where the tool is missing, nobody watches (-p, a bare SDK run), a teammate works, or --bare.
+  expect(withKickoff(base, { ...watched, tools: ['Bash'] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, surfaces: [] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, traits: ['teammate'] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, traits: ['bare'] }, tool)).toBe(base)
   expect(kickoff('x').id).toBe('overview:kickoff')
+})
+
+test('a subagent or teammate cannot overwrite the pane', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  await $.tool.call({ tool: 'mcp__overview__update', goal: 'the main goal' } as never)
+  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: 'a subagent goal', agentId: 'a1' } as never)
+  expect(String(ran.text ?? ran.result)).toContain('Only the main conversation')
+  const back = await $.tool.call({ tool: 'mcp__overview__update', next: 'n' } as never)
+  expect(String(back.text ?? back.result)).toContain('goal: the main goal')
 })
 
 test('what a task still lacks is named, in the order the pane shows it', () => {

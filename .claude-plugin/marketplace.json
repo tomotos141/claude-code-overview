@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "overview",
-      "description": "A pane with the current task at a glance: problem, issue, goal, completion criteria, offshoots and next step, kept current by Claude",
+      "description": "A pane with the current task at a glance: problem, Linear issue, goal, completion criteria, offshoots, next step and whether to close the session, kept current by Claude",
       "source": "./plugins/overview"
     }
   ]

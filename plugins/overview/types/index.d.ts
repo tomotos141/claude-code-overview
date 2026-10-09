@@ -1,6 +1,7 @@
 export type Criterion = { text: string; isDone: boolean }
 export type Offshoot = { text: string; note: string }
 export type Issue = { id: string; url: string }
+export type Close = { isOk: boolean; reason: string }
 export type Board = {
   problem: string
   issue: Issue | null
@@ -8,6 +9,7 @@ export type Board = {
   criteria: Criterion[]
   offshoots: Offshoot[]
   next: string
+  close: Close | null
   at: number
 }
 

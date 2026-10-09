@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Board, Criterion, Issue, Offshoot } from '../types'
+import type { Board, Close, Criterion, Issue, Offshoot } from '../types'
 
 const PANE = 'overview'
 
@@ -14,11 +14,14 @@ export const LABELS = {
   en: {
     title: 'Current task',
     problem: 'Problem',
-    issue: 'Issue',
+    issue: 'Linear issue',
     goal: 'Goal',
     criteria: 'Done when',
     offshoots: 'Offshoots',
     next: 'Next step',
+    close: 'Session',
+    closeOk: 'Safe to close',
+    closeNo: 'Keep it open',
     none: 'None yet',
     unset: '(not set)',
     empty: 'Claude fills this in once a task is agreed.',
@@ -28,11 +31,14 @@ export const LABELS = {
   ja: {
     title: 'いまの作業',
     problem: '課題',
-    issue: 'issue',
+    issue: 'Linear issue',
     goal: '目的',
     criteria: '完了条件',
     offshoots: '派生',
     next: '次の一手',
+    close: 'セッション',
+    closeOk: '閉じてよい',
+    closeNo: 'まだ閉じない',
     none: 'まだありません',
     unset: '（未記入）',
     empty: '作業が決まると、ここに Claude が書き込みます。',
@@ -47,9 +53,11 @@ export const langOf = (options: unknown): Lang =>
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
   'Update the "current task" pane the person watches to see the whole picture of their task.',
-  'Call it when a task is agreed (the problem it solves, goal, completion criteria, next step, and the issue tracking it if there is one),',
+  'Call it when a task is agreed (the problem it solves, goal, completion criteria, next step, and the Linear issue tracking it if there is one),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
+  'Keep close current too: whether the person can close this session now without losing anything, and why',
+  '(uncommitted or unpushed work, something still running, a reply or approval still awaited keep it open).',
   'Write every field in the language the person is using, short and concrete. Pass only the fields that changed;',
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
 ].join(' ')
@@ -60,12 +68,21 @@ const INPUT_SCHEMA = {
     problem: { type: 'string', description: 'The problem this task solves: what is wrong or missing now, in one or two sentences' },
     issue: {
       type: 'object',
-      description: 'The ticket tracking this task (a Linear or GitHub issue, say); an empty id removes it',
+      description: 'The Linear issue tracking this task; an empty id removes it',
       properties: {
-        id: { type: 'string', description: 'Its identifier, such as ABC-123 or #42' },
+        id: { type: 'string', description: 'Its identifier, such as ABC-123' },
         url: { type: 'string', description: 'Its link (optional)' },
       },
       required: ['id'],
+    },
+    close: {
+      type: 'object',
+      description: 'Whether the session can be closed now without losing anything',
+      properties: {
+        ok: { type: 'boolean', description: 'true when nothing would be lost by closing' },
+        reason: { type: 'string', description: 'Why, in a few words' },
+      },
+      required: ['ok'],
     },
     goal: { type: 'string', description: 'What the task is for, in one sentence' },
     criteria: {
@@ -98,10 +115,11 @@ type UpdateInput = {
   criteria?: unknown
   offshoots?: unknown
   next?: unknown
+  close?: unknown
   clear?: unknown
 }
 
-const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', at: 0 }
+const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: null, at: 0 }
 // The pane is a glance, not a log: long lists and long lines are cut.
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
@@ -120,15 +138,27 @@ const issueOf = (x: unknown): Issue | null | undefined => {
   if (typeof id !== 'string') return undefined
   if (id.trim() === '') return null
   const url = (x as { url?: unknown }).url
-  return { id: clip(id), url: typeof url === 'string' ? clip(url) : '' }
+  // A link is kept whole: cut, it would no longer open.
+  return { id: clip(id), url: typeof url === 'string' ? url.trim() : '' }
 }
+
+// Whether the session can be closed, as given: an object with a boolean ok sets it, anything else leaves it.
+const closeOf = (x: unknown): Close | undefined => {
+  const ok = (x as { ok?: unknown } | null)?.ok
+  if (typeof ok !== 'boolean') return undefined
+  const reason = (x as { reason?: unknown }).reason
+  return { isOk: ok, reason: typeof reason === 'string' ? clip(reason) : '' }
+}
+
+// A board kept from an earlier version, across a reload, lacks the newer fields.
+export const normalize = (b: Board | null): Board | null => (b === null ? null : { ...EMPTY, ...b })
 
 // The board after an update: given fields replace, missing ones stay.
 export const applyUpdate = (current: Board | null, input: UpdateInput, at: number): Board | null => {
   if (input.clear === true) return null
-  // A board kept from an earlier version lacks the newer fields.
-  const base: Board = { ...EMPTY, ...current }
+  const base = normalize(current) ?? EMPTY
   const issue = issueOf(input.issue)
+  const close = closeOf(input.close)
   const criteria: Criterion[] | undefined = Array.isArray(input.criteria)
     ? input.criteria
         .filter(hasText)
@@ -151,20 +181,23 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
     criteria: criteria ?? base.criteria,
     offshoots: offshoots ?? base.offshoots,
     next: typeof input.next === 'string' ? clip(input.next) : base.next,
+    close: close ?? base.close,
     at,
   }
 }
 
 // The board as the model reads it back in the tool's answer.
-export const summary = (b: Board | null): string => {
+export const summary = (kept: Board | null): string => {
+  const b = normalize(kept)
   if (b === null) return 'The pane is empty.'
   const lines: string[] = []
-  if (b.problem) lines.push(`problem: ${b.problem}`)
-  if (b.issue) lines.push(`issue: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}`)
+  if (b.problem !== '') lines.push(`problem: ${b.problem}`)
+  if (b.issue !== null) lines.push(`issue: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}`)
   if (b.goal !== '') lines.push(`goal: ${b.goal}`)
   for (const c of b.criteria) lines.push(`criterion [${c.isDone ? 'x' : ' '}] ${c.text}`)
   for (const o of b.offshoots) lines.push(`offshoot: ${o.text}${o.note === '' ? '' : ` (${o.note})`}`)
   if (b.next !== '') lines.push(`next: ${b.next}`)
+  if (b.close) lines.push(`close: ${b.close.isOk ? 'ok' : 'not yet'}${b.close.reason === '' ? '' : ` (${b.close.reason})`}`)
   return lines.length === 0 ? 'The pane is empty.' : lines.join('\n')
 }
 
@@ -205,7 +238,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const b = await read($, board)
+    const b = normalize(await read($, board))
     const width = e.props.bodyColumns ?? 40
     // Headings in the theme's accent; what is finished recedes, what is left and the next step stand out.
     const heading = (text: string, count?: string) => (
@@ -270,6 +303,15 @@ export const register: Register = (on, options) => {
           heading(t.next),
           b.next === '' ? quiet(t.none) : <Text bold color="suggestion">{`  → ${b.next}`}</Text>,
         ])}
+        {b.close
+          ? section([
+              heading(t.close),
+              <Text color={b.close.isOk ? 'success' : 'warning'}>
+                {`  ${b.close.isOk ? '✓' : '✗'} ${b.close.isOk ? t.closeOk : t.closeNo}`}
+                {b.close.reason !== '' && <Text dimColor>{`  ${b.close.reason}`}</Text>}
+              </Text>,
+            ])
+          : null}
         <Text dimColor>{`  ${t.updated} ${clock(b.at)}`}</Text>
       </Box>
     )

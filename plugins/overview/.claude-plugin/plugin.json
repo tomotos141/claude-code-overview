@@ -1,7 +1,7 @@
 {
   "name": "overview",
   "version": "1.1.0",
-  "description": "A pane with the current task at a glance: problem, issue, goal, completion criteria, offshoots and next step, kept current by Claude",
+  "description": "A pane with the current task at a glance: problem, Linear issue, goal, completion criteria, offshoots, next step and whether to close the session, kept current by Claude",
   "author": { "name": "tomotos141" },
   "homepage": "https://github.com/tomotos141/claude-code-overview",
   "license": "MIT",

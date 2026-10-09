@@ -53,15 +53,17 @@ export const langOf = (options: unknown): Lang =>
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
   'Update the "current task" pane the person watches to see the whole picture of their task.',
-  'Call it when a task is agreed (the problem it solves, goal, completion criteria, next step, and the Linear issue tracking it if there is one),',
+  'Call it when a task is agreed (the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
-  'The goal is why the work is done (the purpose it serves), not the deliverable or the steps; those are criteria.',
+  'The problem is what is wrong or missing now. The goal is why the work is done: what solving the problem achieves for someone,',
+  'not a restatement of the problem, and not the deliverable or the steps (those are criteria).',
   'close says whether the person can close this session now without losing anything, and why.',
-  'Set it to not ok when you start editing, start something that keeps running, or begin waiting for a reply or approval;',
-  'set it to ok once the work is committed and pushed, nothing is running and nothing is awaited.',
+  'Set it to not ok when you start changing files or anything else, start something that keeps running,',
+  'or begin waiting for a reply or approval; set it to ok once nothing would be lost (changes committed and pushed',
+  'where they belong, or there were none), nothing is running and nothing is awaited.',
   'When the task ends, send clear together with close, so the pane keeps telling whether the session can be closed.',
-  'A later update that changes anything else drops an ok close, since the work has moved on: send close again with it.',
+  'A later update that sends any other field drops an ok close, since the work has moved on: send close again with it.',
   'Write every field in the language the person is using, short and concrete. Pass only the fields that changed;',
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
 ].join(' ')
@@ -75,7 +77,7 @@ const INPUT_SCHEMA = {
       description: 'The Linear issue tracking this task; an empty id removes it',
       properties: {
         id: { type: 'string', description: 'Its identifier, such as ABC-123' },
-        url: { type: 'string', description: 'Its link (optional)' },
+        url: { type: 'string', description: 'Its link (optional; left out with the same id, the link stays; an empty url removes it)' },
       },
       required: ['id'],
     },
@@ -88,7 +90,7 @@ const INPUT_SCHEMA = {
       },
       required: ['ok'],
     },
-    goal: { type: 'string', description: 'Why the work is done: the purpose it serves, in one sentence (not the deliverable)' },
+    goal: { type: 'string', description: 'Why the work is done: what solving the problem achieves, in one sentence (not the problem restated, not the deliverable)' },
     criteria: {
       type: 'array',
       description: 'Completion criteria; replaces the whole list when given',
@@ -108,7 +110,7 @@ const INPUT_SCHEMA = {
       },
     },
     next: { type: 'string', description: 'The next step, in one sentence' },
-    clear: { type: 'boolean', description: 'true empties the pane (when the task is over); a close sent with it stays' },
+    clear: { type: 'boolean', description: 'true empties the pane (when the task is over); a close sent with it stays, and so does a not-ok one already shown' },
   },
 }
 
@@ -137,13 +139,15 @@ const hasText = (x: unknown): x is { text: string } =>
   typeof (x as { text?: unknown } | null)?.text === 'string' && (x as { text: string }).text.trim() !== ''
 
 // An issue as given: an object with an id sets it, an empty id removes it, anything else leaves it.
-const issueOf = (x: unknown): Issue | null | undefined => {
+// Its link left out, the current one stays when the id is the same.
+const issueOf = (x: unknown, current: Issue | null): Issue | null | undefined => {
   const id = (x as { id?: unknown } | null)?.id
   if (typeof id !== 'string') return undefined
   if (id.trim() === '') return null
   const url = (x as { url?: unknown }).url
-  // A link is kept whole: cut, it would no longer open.
-  return { id: clip(id), url: typeof url === 'string' ? url.trim() : '' }
+  const sameId = current !== null && current.id === clip(id)
+  // A link is kept whole, without spaces or line breaks: cut, it would no longer open.
+  return { id: clip(id), url: typeof url === 'string' ? url.replace(/\s/g, '') : sameId ? current.url : '' }
 }
 
 // Whether the session can be closed, as given: an object with a boolean ok sets it, anything else leaves it.
@@ -163,14 +167,15 @@ export const isBlank = (b: Board): boolean =>
 
 // The board after an update: given fields replace, missing ones stay.
 export const applyUpdate = (current: Board | null, input: UpdateInput, at: number): Board | null => {
-  const close = closeOf(input.close)
-  // A finished task leaves the pane empty but for whether the session can be closed, when that was given with it.
-  if (input.clear === true) return close === undefined ? null : { ...EMPTY, close, at }
   const base = normalize(current) ?? EMPTY
-  const issue = issueOf(input.issue)
-  const isWorkChanged = (['problem', 'issue', 'goal', 'criteria', 'offshoots', 'next'] as const).some(k => input[k] !== undefined)
-  // An ok close is only as good as the moment it was judged: once the work moves on it no longer holds.
-  const keptClose = isWorkChanged && base.close?.isOk === true ? null : base.close
+  const close = closeOf(input.close)
+  // A finished task leaves the pane empty but for whether the session can be closed: the close sent with it,
+  // or else a "keep it open" already shown, which must not vanish unanswered.
+  if (input.clear === true) {
+    const left = close ?? (base.close?.isOk === false ? base.close : null)
+    return left === null ? null : { ...EMPTY, close: left, at }
+  }
+  const issue = issueOf(input.issue, base.issue)
   const criteria: Criterion[] | undefined = Array.isArray(input.criteria)
     ? input.criteria
         .filter(hasText)
@@ -186,6 +191,11 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
           return { text: clip(o.text), note: typeof note === 'string' ? clip(note) : '' }
         })
     : undefined
+  const isWorkSent =
+    issue !== undefined || criteria !== undefined || offshoots !== undefined ||
+    (['problem', 'goal', 'next'] as const).some(k => typeof input[k] === 'string')
+  // An ok close is only as good as the moment it was judged: once the work moves on it no longer holds.
+  const keptClose = isWorkSent && base.close?.isOk === true ? null : base.close
   return {
     problem: typeof input.problem === 'string' ? clip(input.problem) : base.problem,
     issue: issue === undefined ? base.issue : issue,
@@ -203,8 +213,8 @@ export const summary = (kept: Board | null): string => {
   const b = normalize(kept)
   if (b === null) return 'The pane is empty.'
   const lines: string[] = []
-  if (b.problem !== '') lines.push(`problem: ${b.problem}`)
   if (b.issue !== null) lines.push(`issue: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}`)
+  if (b.problem !== '') lines.push(`problem: ${b.problem}`)
   if (b.goal !== '') lines.push(`goal: ${b.goal}`)
   for (const c of b.criteria) lines.push(`criterion [${c.isDone ? 'x' : ' '}] ${c.text}`)
   for (const o of b.offshoots) lines.push(`offshoot: ${o.text}${o.note === '' ? '' : ` (${o.note})`}`)
@@ -289,7 +299,6 @@ export const register: Register = (on, options) => {
     const done = b.criteria.filter(c => c.isDone)
     return (
       <Box flexDirection="column" width={width}>
-        {section([heading(t.problem), <Text>{`  ${b.problem ? b.problem : t.unset}`}</Text>])}
         {b.issue
           ? section([
               heading(t.issue),
@@ -298,6 +307,7 @@ export const register: Register = (on, options) => {
               b.issue.url === '' ? null : quiet(b.issue.url),
             ])
           : null}
+        {section([heading(t.problem), <Text>{`  ${b.problem ? b.problem : t.unset}`}</Text>])}
         {section([heading(t.goal), <Text>{`  ${b.goal === '' ? t.unset : b.goal}`}</Text>])}
         {section([
           heading(t.criteria, `${doneCount}/${b.criteria.length}`),

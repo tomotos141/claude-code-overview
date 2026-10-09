@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
+import type { Elements, EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
 
 import type { Board, Close, Criterion, Issue, Offshoot } from '../types'
 
@@ -28,6 +28,9 @@ export const LABELS = {
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
     opened: 'Opened the Overview pane.',
+    fill: 'Fill in what is missing',
+    fillPrompt: (fields: string) => `Fill in what the Overview pane still lacks (${fields}) as far as you can tell, and ask me about what you cannot.`,
+    progress: (done: number, total: number) => `${done} of ${total} done`,
   },
   ja: {
     title: 'Overview',
@@ -46,6 +49,9 @@ export const LABELS = {
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
     opened: 'Overview のペインを開きました。',
+    fill: '足りない欄を埋めて',
+    fillPrompt: (fields: string) => `Overview の足りない欄（${fields}）を、わかる範囲で埋めてください。わからない欄は質問してください。`,
+    progress: (done: number, total: number) => `${total}件中${done}件完了`,
   },
 } as const
 
@@ -105,6 +111,26 @@ export const missingOf = (b: Board): readonly ('problem' | 'goal' | 'criteria' |
   ...(b.criteria.length === 0 ? (['criteria'] as const) : []),
   ...(b.next === '' ? (['next'] as const) : []),
 ]
+
+// How far the criteria are done, as a bar of cells: full ones done, light ones left. Never empty for a
+// criterion done nor full for one left, so a bar is not read as finished when it is not.
+export const barCells = (done: number, total: number, cells: number): string => {
+  if (total === 0 || cells <= 0) return ''
+  const raw = Math.round((done / total) * cells)
+  const full = done === total ? cells : Math.min(cells - 1, Math.max(done > 0 ? 1 : 0, raw))
+  return `${'█'.repeat(full)}${'░'.repeat(cells - full)}`
+}
+
+// The same bar drawn where a surface draws SVG: a track and the part done, in fixed colors that read on light and dark.
+export const barSvg = (done: number, total: number): string => {
+  const ratio = total === 0 ? 0 : done / total
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="6" viewBox="0 0 240 6">',
+    '<rect width="240" height="6" rx="3" fill="#8a8a8a" fill-opacity="0.3"/>',
+    ratio === 0 ? '' : `<rect width="${Math.round(240 * ratio)}" height="6" rx="3" fill="#4caf50"/>`,
+    '</svg>',
+  ].join('')
+}
 
 // A link is never cut, but one this long is not a link.
 const MAX_URL_CHARS = 2048
@@ -336,7 +362,10 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const elements = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = elements
+    // The terminal draws no SVG; the bar is drawn in cells there.
+    const Svg = e.surface === 'terminal' ? undefined : (elements as Elements['desktop']).Svg
     const b = normalize(await read($, board))
     const width = e.props.bodyColumns ?? 40
     // Headings in the theme's accent; what is finished recedes, what is left and the next step stand out.
@@ -380,13 +409,29 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" width={width}>
         {missing.length === 0
           ? null
-          : section([<Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>])}
+          : section([
+              <Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>,
+              // Asks Claude in the person's stead, as a turn of its own once the session is idle.
+              <Box marginTop={1}>
+                <Button
+                  key="fill"
+                  label={t.fill}
+                  onPress={() => void $.prompt.submit({ text: t.fillPrompt(missing.map(k => t[k]).join(' / ')) })}
+                />
+              </Box>,
+            ])}
         {b.issue
           ? section([
               heading(t.issue),
-              <Text>{`  ${b.issue.id}`}</Text>,
-              // On a line of its own, so a narrow pane wraps the link less.
-              b.issue.url === '' ? null : quiet(b.issue.url),
+              // The id opens the issue where there is a link; without one it is only named.
+              b.issue.url === '' ? (
+                <Text>{`  ${b.issue.id}`}</Text>
+              ) : (
+                <Box flexDirection="row">
+                  <Text>{'  '}</Text>
+                  <Link href={b.issue.url} label={b.issue.id} />
+                </Box>
+              ),
             ])
           : null}
         {section([heading(t.problem), b.problem === '' ? lacking(t.unset) : <Text>{`  ${b.problem}`}</Text>])}
@@ -394,6 +439,11 @@ export const register: Register = (on, options) => {
         {section([
           heading(t.criteria, `${doneCount}/${b.criteria.length}`),
           b.criteria.length === 0 ? lacking(t.none) : null,
+          b.criteria.length === 0
+            ? null
+            : Svg !== undefined
+              ? <Svg source={barSvg(doneCount, b.criteria.length)} alt={t.progress(doneCount, b.criteria.length)} />
+              : <Text color="success">{`  ${barCells(doneCount, b.criteria.length, Math.min(20, width - 4))}`}</Text>,
           ...left.map(c => <Text>{`  ○ ${c.text}`}</Text>),
           ...done.map(c => (
             <Text dimColor>

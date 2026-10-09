@@ -1,7 +1,16 @@
-import type { CommandRunInput } from 'claude-code'
+import type { CommandRunInput, On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { LABELS, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
+import { LABELS, barCells, barSvg, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
+
+// What the engine answers beneath the plugin when a session starts.
+const engine = (on: On) => {
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.attach', async (_$, e) => ({ clientId: e.clientId, handle: 'h' }) as never)
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }) as never)
+  on('tool.register', async () => ({ value: { tool: 'mcp__overview__update' } }) as never)
+  on('prompt.compose', async () => ({ sections: [] }) as never)
+}
 
 const SURFACES = ['terminal', 'desktop'] as const
 const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Overview', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
@@ -149,7 +158,7 @@ test('the pane shows the issue first once set, then the problem, and close once 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    expect(texts.slice(1, 8)).toEqual([LABELS.en.issue, '  ABC-7', '  https://linear.app/acme/issue/ABC-7', LABELS.en.problem, '  p', LABELS.en.goal, '  g'])
+    expect(texts.slice(1, 6)).toEqual([LABELS.en.issue, '  ', LABELS.en.problem, '  p', LABELS.en.goal])
     // The clock line depends on the time zone the test runs in, so only its label is checked.
     expect(texts.slice(-4, -1)).toEqual([LABELS.en.close, `  ✗ ${LABELS.en.closeNo}`, '  unpushed'])
     expect(texts.at(-1)?.startsWith(`  ${LABELS.en.updated} `)).toBe(true)
@@ -252,4 +261,120 @@ test('what a task still lacks is named, in the order the pane shows it', () => {
 test('the missing fields show in Japanese too', () => {
   expect(LABELS.ja.missing).toBe('まだ足りない')
   expect(Object.keys(LABELS.ja).sort()).toEqual(Object.keys(LABELS.en).sort())
+})
+
+test('the issue opens from its id where it has a link, and is only named where it has none', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  const url = 'https://linear.app/acme/issue/ABC-7'
+  await $.tool.call({ tool: 'mcp__overview__update', issue: { id: 'ABC-7', url } } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    const link = await ui.find({ type: 'Link' })
+    expect(link?.props).toEqual(expect.objectContaining({ href: url, label: 'ABC-7' }))
+    await ui.unmount()
+  }
+  await $.tool.call({ tool: 'mcp__overview__update', issue: { id: 'ABC-8' } } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    expect(await ui.find({ type: 'Link' })).toBe(undefined)
+    expect((await ui.findAll({ type: 'Text' })).map(el => el.text)).toContain('  ABC-8')
+    await ui.unmount()
+  }
+})
+
+test('the fill button asks Claude for what is missing, and is gone once nothing is', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  const sent: string[] = []
+  on('prompt.submit', async (_$, e) => {
+    sent.push(e.text)
+    return { drop: 'test' } as never
+  })
+  await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    await ui.press({ key: 'fill' })
+    await ui.unmount()
+  }
+  const names = [LABELS.en.problem, LABELS.en.criteria, LABELS.en.next].join(' / ')
+  expect(sent).toEqual([LABELS.en.fillPrompt(names), LABELS.en.fillPrompt(names)])
+
+  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p', criteria: [{ text: 'c', done: false }], next: 'n' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    expect(await ui.find({ type: 'Button', key: 'fill' })).toBe(undefined)
+    await ui.unmount()
+  }
+})
+
+test('the criteria show a bar: SVG where the surface draws it, cells on the terminal', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  await $.tool.call({ tool: 'mcp__overview__update', criteria: [{ text: 'a', done: true }, { text: 'b', done: false }, { text: 'c', done: false }] } as never)
+  const desktop = await $.ui.mount({ plugin: 'overview', surface: 'desktop', ...PANE })
+  const svg = await desktop.find({ type: 'Svg' })
+  expect(svg?.props.alt).toBe(LABELS.en.progress(1, 3))
+  expect(String(svg?.props.source)).toContain('width="80"')
+  await desktop.unmount()
+  const terminal = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
+  expect((await terminal.findAll({ type: 'Text' })).map(el => el.text)).toContain(`  ${barCells(1, 3, 20)}`)
+  await terminal.unmount()
+})
+
+test('a bar is full only when every criterion is done, and empty only when none is', () => {
+  expect(barCells(0, 3, 10)).toBe('░'.repeat(10))
+  expect(barCells(3, 3, 10)).toBe('█'.repeat(10))
+  expect(barCells(1, 100, 10)).toBe(`█${'░'.repeat(9)}`)
+  expect(barCells(99, 100, 10)).toBe(`${'█'.repeat(9)}░`)
+  expect(barCells(1, 2, 10)).toBe(`${'█'.repeat(5)}${'░'.repeat(5)}`)
+  expect(barCells(0, 0, 10)).toBe('')
+  expect(barSvg(0, 2)).not.toContain('#4caf50')
+  expect(barSvg(2, 2)).toContain('width="240" height="6" rx="3" fill="#4caf50"')
+})
+
+test('the session start offers the tool and the command and opens the pane once where someone watches', async ($, on) => {
+  engine(on)
+  const opened: string[] = []
+  on('ui.open', async (_$, e) => {
+    opened.push(e.id)
+    return { value: true } as never
+  })
+  on('clock.now', async () => ({ value: 0 }) as never)
+  // Nobody watches a headless run: nothing opens, but the tool is still there.
+  await $.session.start({ cwd: '.', surface: null, isInteractive: false })
+  expect(opened).toEqual([])
+  // The desktop app starts as an SDK that draws; a later start or a surface joining does not open it again.
+  await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: false })
+  await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: false })
+  await $.session.attach({ surface: 'mobile', clientId: 'phone' })
+  expect(opened).toEqual(['overview'])
+  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
+  expect(String(ran.text ?? ran.result)).toContain('goal: g')
+  const command = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
+  expect(command.text).toBe(LABELS.en.opened)
+  // The person opening it by hand always opens it.
+  expect(opened).toEqual(['overview', 'overview'])
+})
+
+test('a surface joining after a headless start opens the pane once', async ($, on) => {
+  engine(on)
+  const opened: string[] = []
+  on('ui.open', async (_$, e) => {
+    opened.push(e.id)
+    return { value: true } as never
+  })
+  await $.session.start({ cwd: '.', surface: null, isInteractive: false })
+  await $.session.attach({ surface: 'desktop', clientId: 'app' })
+  await $.session.attach({ surface: 'mobile', clientId: 'phone' })
+  expect(opened).toEqual(['overview'])
+})
+
+test('the composed system prompt carries the kickoff, and the tool is listed in front', async ($, on) => {
+  engine(on)
+  on('tool.describe', async () => ({ description: 'd', isDeferred: true }) as never)
+  await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: false })
+  const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', outputStyle: null, surfaces: ['desktop'], tools: ['mcp__overview__update'], traits: [] })
+  expect(composed.sections.map(s => s.id)).toContain('overview:kickoff')
+  const headless = await $.prompt.compose({ model: 'm', promptModel: 'm', outputStyle: null, surfaces: [], tools: ['mcp__overview__update'], traits: [] })
+  expect(headless.sections.map(s => s.id)).not.toContain('overview:kickoff')
+  const described = await $.tool.describe({ tool: 'mcp__overview__update', description: 'd' } as never)
+  expect(described.isDeferred).toBe(false)
 })

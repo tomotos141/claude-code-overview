@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderChildren } from 'claude-code'
+import type { EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
 
 import type { Board, Close, Criterion, Issue, Offshoot } from '../types'
 
@@ -12,7 +12,7 @@ export type Lang = 'en' | 'ja'
 // The pane's own words; the contents are Claude's, in whatever language the person uses.
 export const LABELS = {
   en: {
-    title: 'Current task',
+    title: 'Overview',
     problem: 'Problem',
     issue: 'Linear issue',
     goal: 'Goal',
@@ -24,12 +24,13 @@ export const LABELS = {
     closeNo: 'Keep it open',
     none: 'None yet',
     unset: '(not set)',
+    missing: 'Still missing',
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
-    opened: 'Opened the current task pane.',
+    opened: 'Opened the Overview pane.',
   },
   ja: {
-    title: 'いまの作業',
+    title: 'Overview',
     problem: '課題',
     issue: 'Linear issue',
     goal: '目的',
@@ -41,9 +42,10 @@ export const LABELS = {
     closeNo: 'まだ閉じない',
     none: 'まだありません',
     unset: '（未記入）',
+    missing: 'まだ足りない',
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
-    opened: 'いまの作業のペインを開きました。',
+    opened: 'Overview のペインを開きました。',
   },
 } as const
 
@@ -52,7 +54,7 @@ export const langOf = (options: unknown): Lang =>
 
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
-  'Update the "current task" pane the person watches to see the whole picture of their task.',
+  'Update the Overview pane the person watches to see the whole picture of their task.',
   'Call it when a task is agreed (the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
@@ -67,6 +69,42 @@ const GUIDE = [
   'Write every field in the language the person is using, short and concrete. Pass only the fields that changed;',
   'criteria and offshoots replace the whole list when given. The answer shows the pane as it now stands.',
 ].join(' ')
+
+// What the model reads in the system prompt, so the first request fills the pane without anyone asking.
+export const kickoff = (tool: string): PromptComposeSection => ({
+  id: 'overview:kickoff',
+  scope: 'session',
+  text: [
+    `The person keeps an Overview pane of their current task in view, written through the ${tool} tool.`,
+    'When they bring a task to work on (not a quick question), the first request of the session included, call it before you start the work, without being asked:',
+    'the problem, goal, completion criteria and next step as far as the request tells them. Leave out what you cannot tell rather than guess;',
+    'the pane marks what is still missing, and you fill it in once you learn it. Then keep it current as the tool describes.',
+  ].join(' '),
+})
+
+// The system prompt with the kickoff added last, only for the main conversation of a session someone watches
+// with the tool offered: not a -p run or the SDK drawing nowhere, not a teammate (it would overwrite the
+// person's task with its own), not --bare. Left alone otherwise.
+export const withKickoff = (
+  sections: readonly PromptComposeSection[],
+  e: Pick<PromptComposeInput, 'tools' | 'surfaces' | 'traits'>,
+  tool: string,
+): readonly PromptComposeSection[] =>
+  e.tools.includes(tool) && e.surfaces.length > 0 && !e.traits.includes('teammate') && !e.traits.includes('bare')
+    ? [...sections.filter(s => s.id !== 'overview:kickoff'), kickoff(tool)]
+    : sections
+
+// Whether someone watches at start: a person at the REPL, or a surface that draws (the desktop app runs
+// the session as an SDK, so isInteractive is false there while the surface is not).
+export const isWatched = (e: Pick<SessionStartInput, 'isInteractive' | 'surface'>): boolean => e.isInteractive || e.surface !== null
+
+// The fields a task needs that the board still lacks, in the order the pane shows them.
+export const missingOf = (b: Board): readonly ('problem' | 'goal' | 'criteria' | 'next')[] => [
+  ...(b.problem === '' ? (['problem'] as const) : []),
+  ...(b.goal === '' ? (['goal'] as const) : []),
+  ...(b.criteria.length === 0 ? (['criteria'] as const) : []),
+  ...(b.next === '' ? (['next'] as const) : []),
+]
 
 // A link is never cut, but one this long is not a link.
 const MAX_URL_CHARS = 2048
@@ -230,6 +268,7 @@ export const summary = (kept: Board | null): string => {
   if (b.next !== '') lines.push(`next: ${b.next}`)
   if (b.close !== null) lines.push(`close: ${b.close.isOk ? 'ok' : 'not yet'}${b.close.reason === '' ? '' : ` (${b.close.reason})`}`)
   if (isBlank(b)) lines.unshift('The pane is empty.')
+  else if (missingOf(b).length > 0) lines.push(`still missing: ${missingOf(b).join(', ')}`)
   return lines.length === 0 ? 'The pane is empty.' : lines.join('\n')
 }
 
@@ -246,13 +285,39 @@ export const register: Register = (on, options) => {
   const t = LABELS[langOf(options)]
   // The engine names the tool after the plugin as installed; keep the name it hands back.
   let toolName = 'mcp__overview__update'
+  // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
+  // stays closed (a reload, such as a language change in the config menu, may open it once more).
+  let isOpenedUnasked = false
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'overview', description: 'Open the pane with the whole picture of the current task' })
     toolName = (await $.tool.register({ name: 'update', description: GUIDE, inputSchema: INPUT_SCHEMA })).tool
     // Opened where someone watches; a headless run has nobody to show it to.
-    if (e.isInteractive) void openPane($, t.title).catch(() => undefined)
+    if (isWatched(e) && !isOpenedUnasked) {
+      isOpenedUnasked = true
+      void openPane($, t.title).catch(() => undefined)
+    }
     return next(e)
+  })
+
+  // A surface that joins after the start (the desktop app, a phone) is someone watching too.
+  on('session.attach', async ($, e, next) => {
+    if (!isOpenedUnasked) {
+      isOpenedUnasked = true
+      void openPane($, t.title).catch(() => undefined)
+    }
+    return next(e)
+  })
+
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    return { sections: withKickoff(composed.sections, e, toolName) }
+  })
+
+  // Listed in front rather than behind ToolSearch, so the kickoff's first call needs no lookup.
+  on('tool.describe', async ($, e, next) => {
+    const described = await next(e)
+    return e.tool === toolName ? { ...described, isDeferred: false } : described
   })
 
   on('command.run', { command: 'overview' }, async $ => {
@@ -262,6 +327,8 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     if (e.tool !== toolName) return next(e)
+    // The pane is the person's task: a subagent or teammate writing its own would overwrite it.
+    if (e.agentId !== undefined) return { result: 'Only the main conversation writes the pane; it was left as it is.' }
     const at = await $.clock.now()
     let written: Board | null = null
     await update($, board, current => (written = applyUpdate(current, e as UpdateInput, at)))
@@ -280,6 +347,8 @@ export const register: Register = (on, options) => {
       </Text>
     )
     const quiet = (text: string) => <Text dimColor>{`  ${text}`}</Text>
+    // What a task still lacks stands out, so a gap is seen at a glance rather than read past.
+    const lacking = (text: string) => <Text color="warning">{`  ! ${text}`}</Text>
     const section = (children: RenderChildren) => (
       <Box flexDirection="column" marginBottom={1}>
         {children}
@@ -303,11 +372,15 @@ export const register: Register = (on, options) => {
         </Box>
       )
 
+    const missing = missingOf(b)
     const doneCount = b.criteria.filter(c => c.isDone).length
     const left = b.criteria.filter(c => !c.isDone)
     const done = b.criteria.filter(c => c.isDone)
     return (
       <Box flexDirection="column" width={width}>
+        {missing.length === 0
+          ? null
+          : section([<Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>])}
         {b.issue
           ? section([
               heading(t.issue),
@@ -316,11 +389,11 @@ export const register: Register = (on, options) => {
               b.issue.url === '' ? null : quiet(b.issue.url),
             ])
           : null}
-        {section([heading(t.problem), <Text>{`  ${b.problem ? b.problem : t.unset}`}</Text>])}
-        {section([heading(t.goal), <Text>{`  ${b.goal === '' ? t.unset : b.goal}`}</Text>])}
+        {section([heading(t.problem), b.problem === '' ? lacking(t.unset) : <Text>{`  ${b.problem}`}</Text>])}
+        {section([heading(t.goal), b.goal === '' ? lacking(t.unset) : <Text>{`  ${b.goal}`}</Text>])}
         {section([
           heading(t.criteria, `${doneCount}/${b.criteria.length}`),
-          b.criteria.length === 0 ? quiet(t.none) : null,
+          b.criteria.length === 0 ? lacking(t.none) : null,
           ...left.map(c => <Text>{`  ○ ${c.text}`}</Text>),
           ...done.map(c => (
             <Text dimColor>
@@ -342,7 +415,7 @@ export const register: Register = (on, options) => {
         ])}
         {section([
           heading(t.next),
-          b.next === '' ? quiet(t.none) : <Text bold color="suggestion">{`  → ${b.next}`}</Text>,
+          b.next === '' ? lacking(t.none) : <Text bold color="suggestion">{`  → ${b.next}`}</Text>,
         ])}
         {session}
         <Text dimColor>{`  ${t.updated} ${clock(b.at)}`}</Text>

@@ -1,10 +1,10 @@
 import type { CommandRunInput } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { LABELS, applyUpdate, langOf, normalize, summary } from './register'
+import { LABELS, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
 
 const SURFACES = ['terminal', 'desktop'] as const
-const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Current task', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
+const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Overview', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
 
 test('an update replaces what it names and keeps the rest', () => {
   const first = applyUpdate(null, { goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', done: false }], next: 'Write it' }, 1)
@@ -40,7 +40,7 @@ test('the problem and the Linear issue are kept until replaced or removed', () =
   // Something far too long to be a link is not taken at all.
   expect(applyUpdate(second, { issue: { id: 'ABC-99', url: `https://x.y/${'a'.repeat(3000)}` } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
   // A line break cannot make a field pass for another one when the board is read back.
-  expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok')
+  expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok\nstill missing: goal, criteria, next')
   expect(applyUpdate(null, { problem: 'a\r\nb\u2028c\td\u0085e\u001cf\u001fg' }, 3)?.problem).toBe('a b c d e f g')
   expect(applyUpdate(null, { issue: { id: 'ABC-1', url: 'https://x.y/a\u0085b\u001c' } }, 3)?.issue?.url).toBe('https://x.y/ab')
   // Only separators is as good as empty.
@@ -98,7 +98,7 @@ test('clearing a finished task keeps the close sent with it, or a keep it open a
 test('a board from before the newer fields still updates', () => {
   const old = { goal: 'g', criteria: [], offshoots: [], next: '', at: 0 } as never
   expect(applyUpdate(old, { next: 'n' }, 1)).toEqual({ problem: '', issue: null, goal: 'g', criteria: [], offshoots: [], next: 'n', close: null, at: 1 })
-  expect(summary(old)).toBe('goal: g')
+  expect(summary(old)).toBe('goal: g\nstill missing: problem, criteria, next')
 })
 
 test('blank items are dropped and long ones are cut', () => {
@@ -131,8 +131,15 @@ test('the pane shows the issue first once set, then the problem, and close once 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    // With no issue, the problem comes first and says it is not set; the goal follows.
-    expect(texts.slice(0, 4)).toEqual([LABELS.en.problem, `  ${LABELS.en.unset}`, LABELS.en.goal, '  g'])
+    // What is missing is named first; with no issue, the problem follows and is marked as not set; the goal after it.
+    expect(texts.slice(0, 5)).toEqual([
+      `! ${LABELS.en.missing}: ${LABELS.en.problem} / ${LABELS.en.criteria} / ${LABELS.en.next}`,
+      LABELS.en.problem,
+      `  ! ${LABELS.en.unset}`,
+      LABELS.en.goal,
+      '  g',
+    ])
+    expect((await ui.find({ type: 'Text', text: `  ! ${LABELS.en.unset}` }))?.props.color).toBe('warning')
     expect(texts).not.toContain(LABELS.en.issue)
     expect(texts).not.toContain(LABELS.en.close)
     await ui.unmount()
@@ -142,7 +149,7 @@ test('the pane shows the issue first once set, then the problem, and close once 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    expect(texts.slice(0, 7)).toEqual([LABELS.en.issue, '  ABC-7', '  https://linear.app/acme/issue/ABC-7', LABELS.en.problem, '  p', LABELS.en.goal, '  g'])
+    expect(texts.slice(1, 8)).toEqual([LABELS.en.issue, '  ABC-7', '  https://linear.app/acme/issue/ABC-7', LABELS.en.problem, '  p', LABELS.en.goal, '  g'])
     // The clock line depends on the time zone the test runs in, so only its label is checked.
     expect(texts.slice(-4, -1)).toEqual([LABELS.en.close, `  ✗ ${LABELS.en.closeNo}`, '  unpushed'])
     expect(texts.at(-1)?.startsWith(`  ${LABELS.en.updated} `)).toBe(true)
@@ -194,5 +201,55 @@ test('/overview opens the pane, titled in English by default', async ($, on) => 
   })
   const ran = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
   expect(ran.text).toBe(LABELS.en.opened)
-  expect(opened).toEqual(['Current task'])
+  expect(opened).toEqual(['Overview'])
+})
+
+test('the pane opens unasked where someone watches: the REPL, or a surface such as the desktop app', () => {
+  expect(isWatched({ isInteractive: true, surface: 'terminal' })).toBe(true)
+  // The desktop app runs the session as an SDK: not interactive, but it draws.
+  expect(isWatched({ isInteractive: false, surface: 'desktop' })).toBe(true)
+  expect(isWatched({ isInteractive: false, surface: null })).toBe(false)
+})
+
+test('the system prompt asks for the pane on the first request, only in a watched main conversation', () => {
+  const base = [{ id: 'intro', text: 'i', scope: 'shared' }] as const
+  const tool = 'mcp__overview__update'
+  const watched = { tools: [tool], surfaces: ['desktop'], traits: [] } as const
+  const added = withKickoff(base, watched, tool)
+  expect(added.map(s => s.id)).toEqual(['intro', 'overview:kickoff'])
+  expect(added.at(-1)?.scope).toBe('session')
+  expect(added.at(-1)?.text).toContain(tool)
+  expect(added.at(-1)?.text).toContain('first request')
+  expect(withKickoff(added, watched, tool)).toHaveLength(2)
+  // The desktop app composes with the print trait (seen in a real session: lean|print|skills, surface desktop),
+  // so print alone must not drop the kickoff; whether anything draws decides.
+  expect(withKickoff(base, { ...watched, traits: ['lean', 'print', 'skills'] }, tool)).toHaveLength(2)
+  // Not where the tool is missing, nobody watches (-p, a bare SDK run), a teammate works, or --bare.
+  expect(withKickoff(base, { ...watched, tools: ['Bash'] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, surfaces: [] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, traits: ['teammate'] }, tool)).toBe(base)
+  expect(withKickoff(base, { ...watched, traits: ['bare'] }, tool)).toBe(base)
+  expect(kickoff('x').id).toBe('overview:kickoff')
+})
+
+test('a subagent or teammate cannot overwrite the pane', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  await $.tool.call({ tool: 'mcp__overview__update', goal: 'the main goal' } as never)
+  const ran = await $.tool.call({ tool: 'mcp__overview__update', goal: 'a subagent goal', agentId: 'a1' } as never)
+  expect(String(ran.text ?? ran.result)).toContain('Only the main conversation')
+  const back = await $.tool.call({ tool: 'mcp__overview__update', next: 'n' } as never)
+  expect(String(back.text ?? back.result)).toContain('goal: the main goal')
+})
+
+test('what a task still lacks is named, in the order the pane shows it', () => {
+  const b = applyUpdate(null, { goal: 'g' }, 0)
+  expect(b === null ? [] : missingOf(b)).toEqual(['problem', 'criteria', 'next'])
+  const full = applyUpdate(null, { problem: 'p', goal: 'g', criteria: [{ text: 'c', done: false }], next: 'n' }, 0)
+  expect(full === null ? ['x'] : missingOf(full)).toEqual([])
+  expect(summary(full)).not.toContain('still missing')
+})
+
+test('the missing fields show in Japanese too', () => {
+  expect(LABELS.ja.missing).toBe('まだ足りない')
+  expect(Object.keys(LABELS.ja).sort()).toEqual(Object.keys(LABELS.en).sort())
 })

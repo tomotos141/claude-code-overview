@@ -36,10 +36,11 @@ Session
 
 ## How it works
 
-- The plugin gives Claude one tool, `update`. Claude calls it when a task is agreed (the Linear issue if any, the problem, the goal, the criteria, the next step), when a completion criterion is met, when a follow-up branches off, when the next step changes, and when whether the session can be closed changes.
+- The plugin gives Claude one tool, `update`, and a line in its system prompt asking it to fill the pane as soon as you bring a task, the first request of the session included, without being asked. The line is added only where the pane is shown: not in a `claude -p` run, a teammate, or `--bare`. Only the main conversation writes the pane; a subagent's call leaves it as it is. Claude calls it when a task is agreed (the Linear issue if any, the problem, the goal, the criteria, the next step), when a completion criterion is met, when a follow-up branches off, when the next step changes, and when whether the session can be closed changes.
 - The goal is why the work is done — what solving the problem achieves — not the deliverable (that goes in "Done when") and not the problem said again.
 - The Linear issue is optional: it shows first, only when the task has one, as its identifier (`ABC-123`) with its link on the next line when Claude has one.
 - **Session** says whether you can close the session now without losing anything (✓ safe to close / ✗ keep it open) and why. Claude judges it: work that would be lost (uncommitted or unpushed changes), something still running, or a reply or approval still awaited keep it open; with none of those — including work that changed nothing — it is safe to close. It shows once Claude has judged it. When a finished task is cleared, it stays if Claude sends it along, as it is told to, and a "keep it open" stays even if Claude forgets. A "safe to close" disappears as soon as the work moves on, so a stale one never lingers.
+- What a task still lacks stands out: an empty problem, goal, completion criteria or next step is marked `!` in the theme's warning color, and a line at the top names them all ("Still missing: Problem / Next step"). Claude leaves out what it cannot tell from your request rather than guess, so the marks show what to tell it.
 - Open items are listed first; finished ones are dimmed with a check. Lists are capped at 12 items and lines at 160 characters (the issue's link is kept whole, up to 2048 characters), so the pane stays a glance.
 - The plugin makes no network requests of its own. What Claude writes to the pane is part of the conversation, like any tool call, so treat it as you would anything else you tell Claude.
 
@@ -59,7 +60,7 @@ claude plugin install overview@claude-code-overview
 
 For Japanese headings, add `--config language=ja` to the install command.
 
-Then start a new session. The pane opens when the session starts (Claude Code decides where it sits); if you don't see it, type `/overview`.
+Then start a new session. The pane opens when the session starts, in the terminal and in the desktop app alike (Claude Code decides where it sits; a terminal narrower than 144 columns holds it back until it widens); if you don't see it, type `/overview`. Once you close it, it is not opened for you again until the plugin reloads (a new session, or a setting changed in `/config`).
 
 ## Settings
 
@@ -82,14 +83,15 @@ MIT
 
 ## 日本語
 
-Claude Code に「いまの作業」を出すペインです。追跡している Linear issue（あれば）と、**解きたい課題・何のための作業か・どうなれば終わりか・途中で分かれた別件・次の一手**、いまセッションを閉じてよいかを、作業が進むたびに Claude が書き換えます。長いセッションでも、いまどこにいるかを見失いません。
+Claude Code に、いまの作業の全体像を出す「Overview」ペインです。追跡している Linear issue（あれば）と、**解きたい課題・何のための作業か・どうなれば終わりか・途中で分かれた別件・次の一手**、いまセッションを閉じてよいかを、作業が進むたびに Claude が書き換えます。長いセッションでも、いまどこにいるかを見失いません。
 
 ### しくみ
 
-- Claude に `update` というツールを1つ渡します。作業が決まったとき（あれば Linear issue と、課題・目的・完了条件・次の一手）、完了条件を1つ満たしたとき、別件が分かれたとき、次の一手が変わったとき、閉じてよいかが変わったときに、Claude がこれを呼びます。
+- Claude に `update` というツールを1つ渡し、システムプロンプトに「作業を頼まれたら（セッション最初の依頼も含めて）、頼まれなくても先にペインを埋める」という一文を足します。この一文はペインが見える場面だけに足し、`claude -p` の実行・teammate・`--bare` には足しません。ペインに書けるのはメインの会話だけで、subagent からの呼び出しではペインは変わりません。作業が決まったとき（あれば Linear issue と、課題・目的・完了条件・次の一手）、完了条件を1つ満たしたとき、別件が分かれたとき、次の一手が変わったとき、閉じてよいかが変わったときに、Claude がこれを呼びます。
 - 目的は「何のための作業か」、つまり課題が解けた先で得たいことです。作るもの（完了条件に書きます）や、課題の言い換えは書きません。
 - Linear issue は、作業に紐づく issue があるときだけ、一番上に出ます。番号（`ABC-123`）を出し、Claude がリンクを知っていれば次の行に出します。
 - **セッション** の欄は、いま閉じても何も失わないか（✓ 閉じてよい ／ ✗ まだ閉じない）と、その理由を出します。判断するのは Claude で、失われる変更（未コミット・未 push）、動いている処理、待っている返事や承認があれば「まだ閉じない」、どれもなければ（何も変えなかった作業も含めて）「閉じてよい」にします。Claude が判断してから出ます。終わった作業を空にするとき、Claude がこの欄を一緒に送れば残ります（そう指示してあります）。「まだ閉じない」は、送り忘れても残ります。「閉じてよい」は、そのあと作業が動いたら消えるので、古い「閉じてよい」が残ることはありません。
+- 作業に足りない情報は目立たせます。課題・目的・完了条件・次の一手のうち空いているものには、テーマの警告色で `!` を付け、一番上の行にまとめて出します（「まだ足りない: 課題 / 次の一手」）。Claude は依頼から読み取れないことを推測で埋めずに空けておくので、この印を見れば何を伝えればよいかがわかります。
 - 残っている完了条件が上に、済んだものは ✓ 付きの薄い文字で下に並びます。一覧は12件、1行は160字までで切るので（issue のリンクは2048字まで切りません）、ひと目で読める大きさに収まります。
 - plugin 自身は外部と通信しません。ただし Claude がペインに書く内容は、ほかのツール呼び出しと同じく会話の一部として扱われます。Claude に話してよい範囲の内容にしてください。
 
@@ -109,7 +111,7 @@ claude plugin install overview@claude-code-overview --config language=ja
 
 見出しを英語にしたいときは `--config language=ja` を外してください。
 
-新しいセッションを開くと、ペインが開きます（どこに置かれるかは Claude Code が決めます）。見当たらないときは `/overview` と打ってください。
+新しいセッションを開くと、ターミナルでもデスクトップアプリでもペインが開きます（どこに置かれるかは Claude Code が決めます。ターミナルの幅が144桁より狭いときは、広がるまで待ちます）。見当たらないときは `/overview` と打ってください。一度閉じると、plugin が読み込み直されるまで（新しいセッションを開く、`/config` で設定を変える など）は自動では開きません。
 
 ### 設定
 

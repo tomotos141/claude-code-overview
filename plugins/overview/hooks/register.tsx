@@ -12,7 +12,8 @@ export type Lang = 'en' | 'ja'
 // The pane's own words; the contents are Claude's, in whatever language the person uses.
 export const LABELS = {
   en: {
-    title: 'Session overview',
+    pane: 'Session overview',
+    title: 'Title',
     problem: 'Problem',
     issue: 'Linear issue',
     goal: 'Goal',
@@ -24,7 +25,7 @@ export const LABELS = {
     closeNo: 'Keep it open',
     archiveOk: 'Safe to archive',
     archiveNo: 'Do not archive yet',
-    spinOff: 'Start in a new session',
+    spinOff: '↗',
     spinOffPrompt: (text: string) => `Spin off the side task "${text}" as a task chip (spawn_task), so it can start in a new session.`,
     refresh: 'Refresh',
     refreshPrompt: 'Bring the Session overview pane up to date with where the work stands now.',
@@ -37,7 +38,8 @@ export const LABELS = {
     progress: (done: number, total: number) => `${done} of ${total} done`,
   },
   ja: {
-    title: 'Session overview',
+    pane: 'Session overview',
+    title: '題名',
     problem: '課題',
     issue: 'Linear issue',
     goal: '目的',
@@ -49,7 +51,7 @@ export const LABELS = {
     closeNo: 'まだ閉じない',
     archiveOk: 'アーカイブしてよい',
     archiveNo: 'まだアーカイブしない',
-    spinOff: '別のセッションで始める',
+    spinOff: '↗',
     spinOffPrompt: (text: string) => `別件「${text}」を、新しいセッションで始められるタスクチップ（spawn_task）として切り出してください。`,
     refresh: 'ペインを更新',
     refreshPrompt: 'Session overview のペインを、いまの作業の状況に合わせて更新してください。',
@@ -69,7 +71,7 @@ export const langOf = (options: unknown): Lang =>
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
   'Update the Session overview pane the person watches to see the whole picture of their task.',
-  'Call it when a task is agreed (the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
+  'Call it when a task is agreed (a short title naming it, the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
   'The problem is what is wrong or missing now. The goal is why the work is done: what solving the problem achieves for someone,',
@@ -91,7 +93,7 @@ export const kickoff = (tool: string): PromptComposeSection => ({
   text: [
     `The person keeps a Session overview pane of their current task in view, written through the ${tool} tool.`,
     'When they bring a task to work on (not a quick question), the first request of the session included, call it before you start the work, without being asked:',
-    'the problem, goal, completion criteria and next step as far as the request tells them. Leave out what you cannot tell rather than guess;',
+    'a short title, the problem, goal, completion criteria and next step as far as the request tells them. Leave out what you cannot tell rather than guess;',
     'the pane marks what is still missing, and you fill it in once you learn it. Then keep it current as the tool describes.',
   ].join(' '),
 })
@@ -112,8 +114,9 @@ export const withKickoff = (
 // the session as an SDK, so isInteractive is false there while the surface is not).
 export const isWatched = (e: Pick<SessionStartInput, 'isInteractive' | 'surface'>): boolean => e.isInteractive || e.surface !== null
 
-// The fields a task needs that the board still lacks, in the order the pane shows them.
-export const missingOf = (b: Board): readonly ('problem' | 'goal' | 'criteria' | 'next')[] => [
+// The fields a task needs that the board still lacks, in the order the tool asks for them.
+export const missingOf = (b: Board): readonly ('title' | 'problem' | 'goal' | 'criteria' | 'next')[] => [
+  ...(b.title === '' ? (['title'] as const) : []),
   ...(b.problem === '' ? (['problem'] as const) : []),
   ...(b.goal === '' ? (['goal'] as const) : []),
   ...(b.criteria.length === 0 ? (['criteria'] as const) : []),
@@ -146,6 +149,7 @@ const MAX_URL_CHARS = 2048
 const INPUT_SCHEMA = {
   type: 'object',
   properties: {
+    title: { type: 'string', description: 'A short title naming the task, a few words, like a ticket title' },
     problem: { type: 'string', description: 'The problem this task solves: what is wrong or missing now, in a sentence' },
     issue: {
       type: 'object',
@@ -190,6 +194,7 @@ const INPUT_SCHEMA = {
 }
 
 type UpdateInput = {
+  title?: unknown
   problem?: unknown
   issue?: unknown
   goal?: unknown
@@ -200,7 +205,7 @@ type UpdateInput = {
   clear?: unknown
 }
 
-const EMPTY: Board = { problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: null, at: 0 }
+const EMPTY: Board = { title: '', problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: null, at: 0 }
 // The pane is a glance, not a log: long lists and long lines are cut.
 const MAX_ITEMS = 12
 const MAX_CHARS = 160
@@ -244,7 +249,7 @@ export const normalize = (b: Board | null): Board | null => (b === null ? null :
 
 // Whether a board holds no task, only (at most) whether the session can be closed.
 export const isBlank = (b: Board): boolean =>
-  b.problem === '' && b.issue === null && b.goal === '' && b.criteria.length === 0 && b.offshoots.length === 0 && b.next === ''
+  b.title === '' && b.problem === '' && b.issue === null && b.goal === '' && b.criteria.length === 0 && b.offshoots.length === 0 && b.next === ''
 
 // The board after an update: given fields replace, missing ones stay.
 export const applyUpdate = (current: Board | null, input: UpdateInput, at: number): Board | null => {
@@ -274,10 +279,11 @@ export const applyUpdate = (current: Board | null, input: UpdateInput, at: numbe
     : undefined
   const isWorkSent =
     issue !== undefined || criteria !== undefined || offshoots !== undefined ||
-    (['problem', 'goal', 'next'] as const).some(k => typeof input[k] === 'string')
+    (['title', 'problem', 'goal', 'next'] as const).some(k => typeof input[k] === 'string')
   // An ok close is only as good as the moment it was judged: once the work moves on it no longer holds.
   const keptClose = isWorkSent && base.close?.isOk === true ? null : base.close
   return {
+    title: typeof input.title === 'string' ? clip(input.title) : base.title,
     problem: typeof input.problem === 'string' ? clip(input.problem) : base.problem,
     issue: issue === undefined ? base.issue : issue,
     goal: typeof input.goal === 'string' ? clip(input.goal) : base.goal,
@@ -294,6 +300,7 @@ export const summary = (kept: Board | null): string => {
   const b = normalize(kept)
   if (b === null) return 'The pane is empty.'
   const lines: string[] = []
+  if (b.title !== '') lines.push(`title: ${b.title}`)
   if (b.issue !== null) lines.push(`issue: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}`)
   if (b.problem !== '') lines.push(`problem: ${b.problem}`)
   if (b.goal !== '') lines.push(`goal: ${b.goal}`)
@@ -332,7 +339,7 @@ export const register: Register = (on, options) => {
     // Opened where someone watches; a headless run has nobody to show it to.
     if (isWatched(e) && !isOpenedUnasked) {
       isOpenedUnasked = true
-      void openPane($, t.title).catch(() => undefined)
+      void openPane($, t.pane).catch(() => undefined)
     }
     return next(e)
   })
@@ -346,7 +353,7 @@ export const register: Register = (on, options) => {
   on('session.attach', async ($, e, next) => {
     if (!isOpenedUnasked) {
       isOpenedUnasked = true
-      void openPane($, t.title).catch(() => undefined)
+      void openPane($, t.pane).catch(() => undefined)
     }
     return next(e)
   })
@@ -363,7 +370,7 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'overview' }, async $ => {
-    await openPane($, t.title)
+    await openPane($, t.pane)
     return { text: t.opened }
   })
 
@@ -408,33 +415,28 @@ export const register: Register = (on, options) => {
       void $.prompt.submit({ text })
     }
     const refresh = (
-      <Box marginTop={1}>
-        <Button
-          key="refresh"
-          label={t.refresh}
-          onPress={() => ask(t.refreshPrompt)}
-        />
-      </Box>
+      <Button
+        key="refresh"
+        label={t.refresh}
+        onPress={() => ask(t.refreshPrompt)}
+      />
     )
+    // Named after the step the person takes: the desktop app archives a session, the terminal closes it.
+    const closeWords = (isOk: boolean) => (isOk ? `✓ ${isDesktop ? t.archiveOk : t.closeOk}` : `✗ ${isDesktop ? t.archiveNo : t.closeNo}`)
 
-    const session =
-      b?.close
-        ? section([
-            heading(t.close),
-            // Named after the step the person takes: the desktop app archives a session, the terminal closes it.
-            <Text color={b.close.isOk ? 'success' : 'warning'}>
-              {`  ${b.close.isOk ? `✓ ${isDesktop ? t.archiveOk : t.closeOk}` : `✗ ${isDesktop ? t.archiveNo : t.closeNo}`}`}
-            </Text>,
-            b.close.reason === '' ? null : quiet(b.close.reason),
-          ])
-        : null
-
+    // An empty pane: the line that says Claude fills it in, and whether the session can be closed.
     if (b === null || isBlank(b))
       return (
         <Box flexDirection="column" width={width}>
           {section([heading(t.goal), quiet(t.empty)])}
-          {session}
-          {refresh}
+          {b?.close
+            ? section([
+                heading(t.close),
+                <Text color={b.close.isOk ? 'success' : 'warning'}>{`  ${closeWords(b.close.isOk)}`}</Text>,
+                b.close.reason === '' ? null : quiet(b.close.reason),
+              ])
+            : null}
+          <Box marginTop={1}>{refresh}</Box>
         </Box>
       )
 
@@ -442,13 +444,34 @@ export const register: Register = (on, options) => {
     const doneCount = b.criteria.filter(c => c.isDone).length
     const left = b.criteria.filter(c => !c.isDone)
     const done = b.criteria.filter(c => c.isDone)
+    // What the cover leaves unset stands out without a heading of its own.
+    const unsetCover = (label: string) => <Text color="warning">{`! ${label} ${t.unset}`}</Text>
     return (
       <Box flexDirection="column" width={width}>
         {missing.length === 0
           ? null
-          : section([
-              <Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>,
-            ])}
+          : section([<Text bold color="warning">{`! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`}</Text>])}
+        {/* The cover, read on coming back to the session: what the task is, what comes next, how far it is,
+            and whether the session can be put away. */}
+        {section([
+          b.title === '' ? unsetCover(t.title) : <Text bold>{b.title}</Text>,
+          b.next === '' ? unsetCover(t.next) : <Text bold color="suggestion">{`→ ${b.next}`}</Text>,
+          b.criteria.length === 0 ? null : (
+            <Box flexDirection="row">
+              {Svg !== undefined
+                ? <Svg source={barSvg(doneCount, b.criteria.length)} alt={t.progress(doneCount, b.criteria.length)} />
+                : <Text color="success">{barCells(doneCount, b.criteria.length, Math.min(20, width - 8))}</Text>}
+              <Text dimColor>{`  ${doneCount}/${b.criteria.length}`}</Text>
+            </Box>
+          ),
+          b.close === null ? null : (
+            <Text color={b.close.isOk ? 'success' : 'warning'}>
+              {closeWords(b.close.isOk)}
+              {b.close.reason !== '' && <Text dimColor>{` — ${b.close.reason}`}</Text>}
+            </Text>
+          ),
+        ])}
+        {section([<Text dimColor>{'─'.repeat(Math.max(8, Math.min(width - 2, 40)))}</Text>])}
         {b.issue
           ? section([
               heading(t.issue),
@@ -468,16 +491,6 @@ export const register: Register = (on, options) => {
         {section([
           heading(t.criteria, `${doneCount}/${b.criteria.length}`),
           b.criteria.length === 0 ? lacking(t.none) : null,
-          b.criteria.length === 0
-            ? null
-            : Svg !== undefined
-              ? (
-                  // Set in as far as the lines of text are.
-                  <Box marginLeft={2}>
-                    <Svg source={barSvg(doneCount, b.criteria.length)} alt={t.progress(doneCount, b.criteria.length)} />
-                  </Box>
-                )
-              : <Text color="success">{`  ${barCells(doneCount, b.criteria.length, Math.min(20, width - 4))}`}</Text>,
           ...left.map(c => <Text>{`  ○ ${c.text}`}</Text>),
           ...done.map(c => (
             <Text dimColor>
@@ -491,32 +504,21 @@ export const register: Register = (on, options) => {
           heading(t.offshoots),
           b.offshoots.length === 0 ? quiet(t.none) : null,
           ...b.offshoots.map((o, i) => (
-            <Box flexDirection="column">
+            <Box flexDirection="row">
+              <Text>{isDesktop ? '  ' : '  • '}</Text>
+              {/* Task chips are the desktop app's: there a side task can start a session of its own. */}
+              {isDesktop && <Button key={`spinoff:${i}`} label={t.spinOff} onPress={() => ask(t.spinOffPrompt(o.text))} />}
               <Text>
-                {`  • ${o.text}`}
+                {isDesktop ? ` ${o.text}` : o.text}
                 {o.note !== '' && <Text dimColor>{` (${o.note})`}</Text>}
               </Text>
-              {/* Task chips are the desktop app's: there a side task can start a session of its own. */}
-              {isDesktop && (
-                <Box marginLeft={4}>
-                  <Button
-                    key={`spinoff:${i}`}
-                    label={t.spinOff}
-                    dimColor
-                    onPress={() => ask(t.spinOffPrompt(o.text))}
-                  />
-                </Box>
-              )}
             </Box>
           )),
         ])}
-        {section([
-          heading(t.next),
-          b.next === '' ? lacking(t.none) : <Text bold color="suggestion">{`  → ${b.next}`}</Text>,
-        ])}
-        {session}
-        <Text dimColor>{`  ${t.updated} ${clock(b.at)}`}</Text>
-        {refresh}
+        <Box flexDirection="row">
+          <Text dimColor>{`  ${t.updated} ${clock(b.at)}  `}</Text>
+          {refresh}
+        </Box>
       </Box>
     )
   })

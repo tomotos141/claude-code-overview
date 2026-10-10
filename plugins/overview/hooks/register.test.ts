@@ -30,7 +30,7 @@ const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Overvi
 
 test('an update replaces what it names and keeps the rest', () => {
   const first = applyUpdate(null, { goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', done: false }], next: 'Write it' }, 1)
-  expect(first).toEqual({ problem: '', issue: null, goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', isDone: false }], offshoots: [], next: 'Write it', close: null, at: 1 })
+  expect(first).toEqual({ title: '', problem: '', issue: null, goal: 'Ship the checklist', criteria: [{ text: 'Tests pass', isDone: false }], offshoots: [], next: 'Write it', close: null, at: 1 })
 
   const second = applyUpdate(first, { criteria: [{ text: 'Tests pass', done: true }], offshoots: [{ text: 'Fix the date picker', note: 'separate PR' }] }, 2)
   expect(second?.goal).toBe('Ship the checklist')
@@ -62,7 +62,7 @@ test('the problem and the Linear issue are kept until replaced or removed', () =
   // Something far too long to be a link is not taken at all.
   expect(applyUpdate(second, { issue: { id: 'ABC-99', url: `https://x.y/${'a'.repeat(3000)}` } }, 3)?.issue).toEqual({ id: 'ABC-12', url })
   // A line break cannot make a field pass for another one when the board is read back.
-  expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok\nstill missing: goal, criteria, next')
+  expect(summary(applyUpdate(null, { problem: 'a\nclose: ok' }, 3))).toBe('problem: a close: ok\nstill missing: title, goal, criteria, next')
   expect(applyUpdate(null, { problem: 'a\r\nb\u2028c\td\u0085e\u001cf\u001fg' }, 3)?.problem).toBe('a b c d e f g')
   expect(applyUpdate(null, { issue: { id: 'ABC-1', url: 'https://x.y/a\u0085b\u001c' } }, 3)?.issue?.url).toBe('https://x.y/ab')
   // Only separators is as good as empty.
@@ -113,14 +113,14 @@ test('clearing a finished task keeps the close sent with it, or a keep it open a
   // A "keep it open" carried through clear still stands when the next task starts.
   expect(applyUpdate(applyUpdate(open, { clear: true }, 3), { goal: 'next task' }, 4)?.close).toEqual({ isOk: false, reason: 'deploy running' })
   const cleared = applyUpdate(b, { clear: true, close: { ok: true, reason: 'pushed and merged' } }, 2)
-  expect(cleared).toEqual({ problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: { isOk: true, reason: 'pushed and merged' }, at: 2 })
+  expect(cleared).toEqual({ title: '', problem: '', issue: null, goal: '', criteria: [], offshoots: [], next: '', close: { isOk: true, reason: 'pushed and merged' }, at: 2 })
   expect(summary(cleared)).toBe('The pane is empty.\nclose: ok (pushed and merged)')
 })
 
 test('a board from before the newer fields still updates', () => {
   const old = { goal: 'g', criteria: [], offshoots: [], next: '', at: 0 } as never
-  expect(applyUpdate(old, { next: 'n' }, 1)).toEqual({ problem: '', issue: null, goal: 'g', criteria: [], offshoots: [], next: 'n', close: null, at: 1 })
-  expect(summary(old)).toBe('goal: g\nstill missing: problem, criteria, next')
+  expect(applyUpdate(old, { next: 'n' }, 1)).toEqual({ title: '', problem: '', issue: null, goal: 'g', criteria: [], offshoots: [], next: 'n', close: null, at: 1 })
+  expect(summary(old)).toBe('goal: g\nstill missing: title, problem, criteria, next')
 })
 
 test('blank items are dropped and long ones are cut', () => {
@@ -132,8 +132,8 @@ test('blank items are dropped and long ones are cut', () => {
 
 test('the model reads the board back', () => {
   expect(summary(null)).toBe('The pane is empty.')
-  const b = applyUpdate(null, { problem: 'p', issue: { id: 'ABC-1', url: 'u' }, goal: 'g', criteria: [{ text: 'c', done: true }], offshoots: [{ text: 'o' }], next: 'n', close: { ok: false, reason: 'r' } }, 0)
-  expect(summary(b)).toBe('issue: ABC-1 (u)\nproblem: p\ngoal: g\ncriterion [x] c\noffshoot: o\nnext: n\nclose: not yet (r)')
+  const b = applyUpdate(null, { title: 't', problem: 'p', issue: { id: 'ABC-1', url: 'u' }, goal: 'g', criteria: [{ text: 'c', done: true }], offshoots: [{ text: 'o' }], next: 'n', close: { ok: false, reason: 'r' } }, 0)
+  expect(summary(b)).toBe('title: t\nissue: ABC-1 (u)\nproblem: p\ngoal: g\ncriterion [x] c\noffshoot: o\nnext: n\nclose: not yet (r)')
 })
 
 test('the model updates the pane through its tool', async ($, on) => {
@@ -147,33 +147,50 @@ test('the model updates the pane through its tool', async ($, on) => {
   expect(text).toContain('close: ok')
 })
 
-test('the pane shows the issue first once set, then the problem, and close once set', async ($, on) => {
+test('the cover comes first: the title, the next step, how far it is and whether to close; the details follow a rule', async ($, on) => {
   on('clock.now', async () => ({ value: 0 }) as never)
   await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    // What is missing is named first; with no issue, the problem follows and is marked as not set; the goal after it.
-    expect(texts.slice(0, 5)).toEqual([
-      `! ${LABELS.en.missing}: ${LABELS.en.problem} / ${LABELS.en.criteria} / ${LABELS.en.next}`,
-      LABELS.en.problem,
-      `  ! ${LABELS.en.unset}`,
-      LABELS.en.goal,
-      '  g',
+    // What is missing is named first; the cover marks its own gaps, with no bar and no close until they are set.
+    expect(texts.slice(0, 3)).toEqual([
+      `! ${LABELS.en.missing}: ${LABELS.en.title} / ${LABELS.en.problem} / ${LABELS.en.criteria} / ${LABELS.en.next}`,
+      `! ${LABELS.en.title} ${LABELS.en.unset}`,
+      `! ${LABELS.en.next} ${LABELS.en.unset}`,
     ])
-    expect((await ui.find({ type: 'Text', text: `  ! ${LABELS.en.unset}` }))?.props.color).toBe('warning')
+    expect((await ui.find({ type: 'Text', text: `! ${LABELS.en.title} ${LABELS.en.unset}` }))?.props.color).toBe('warning')
     expect(texts).not.toContain(LABELS.en.issue)
-    expect(texts).not.toContain(LABELS.en.close)
     await ui.unmount()
   }
 
-  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p', issue: { id: 'ABC-7', url: 'https://linear.app/acme/issue/ABC-7' }, close: { ok: false, reason: 'unpushed' } } as never)
+  await $.tool.call({
+    tool: 'mcp__overview__update',
+    title: 'Fix the date picker',
+    problem: 'p',
+    issue: { id: 'ABC-7', url: 'https://linear.app/acme/issue/ABC-7' },
+    criteria: [{ text: 'c1', done: true }, { text: 'c2', done: false }],
+    offshoots: [{ text: 'o' }],
+    next: 'Write the test',
+    close: { ok: false, reason: 'unpushed' },
+  } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    expect(texts.slice(1, 6)).toEqual([LABELS.en.issue, '  ', LABELS.en.problem, '  p', LABELS.en.goal])
-    // The clock line depends on the time zone the test runs in, so only its label is checked.
-    expect(texts.slice(-4, -1)).toEqual([LABELS.en.close, `  ✗ ${KEEP[surface]}`, '  unpushed'])
+    expect(texts.slice(0, 2)).toEqual(['Fix the date picker', '→ Write the test'])
+    expect((await ui.find({ type: 'Text', text: 'Fix the date picker' }))?.props.bold).toBe(true)
+    // How far it is, then whether the session can be put away, named after the step the surface takes.
+    const count = texts.indexOf('  1/2')
+    const close = texts.findIndex(x => x.startsWith(`✗ ${KEEP[surface]}`))
+    const rule = texts.findIndex(x => x.startsWith('─'))
+    expect(count).toBeGreaterThan(1)
+    expect(close).toBeGreaterThan(count)
+    expect(texts[close]).toContain('unpushed')
+    expect(rule).toBeGreaterThan(close)
+    // The details below the rule, in the order they are read: issue, problem, goal, criteria, side tasks.
+    const order = [LABELS.en.issue, LABELS.en.problem, LABELS.en.goal, LABELS.en.offshoots].map(h => texts.indexOf(h))
+    expect(order[0]).toBeGreaterThan(rule)
+    expect([...order].sort((a, z) => a - z)).toEqual(order)
     expect(texts.at(-1)?.startsWith(`  ${LABELS.en.updated} `)).toBe(true)
     await ui.unmount()
   }
@@ -182,7 +199,7 @@ test('the pane shows the issue first once set, then the problem, and close once 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const safe = await ui.find({ type: 'Text', text: SAFE[surface] })
-    expect(safe?.text).toBe(`  ✓ ${SAFE[surface]}`)
+    expect(safe?.text).toBe(`✓ ${SAFE[surface]}`)
     expect(safe?.props.color).toBe('success')
     await ui.unmount()
   }
@@ -202,7 +219,7 @@ test('a cleared pane still says whether the session can be closed', async ($, on
 
 test('normalize fills in the fields a board kept from before them lacks', () => {
   const old = { goal: 'g', criteria: [], offshoots: [], next: '', at: 0 } as never
-  expect(normalize(old)).toEqual({ problem: '', issue: null, goal: 'g', criteria: [], offshoots: [], next: '', close: null, at: 0 })
+  expect(normalize(old)).toEqual({ title: '', problem: '', issue: null, goal: 'g', criteria: [], offshoots: [], next: '', close: null, at: 0 })
   expect(normalize(null)).toBe(null)
 })
 
@@ -263,10 +280,10 @@ test('a subagent or teammate cannot overwrite the pane', async ($, on) => {
   expect(String(back.text ?? back.result)).toContain('goal: the main goal')
 })
 
-test('what a task still lacks is named, in the order the pane shows it', () => {
+test('what a task still lacks is named, the title first', () => {
   const b = applyUpdate(null, { goal: 'g' }, 0)
-  expect(b === null ? [] : missingOf(b)).toEqual(['problem', 'criteria', 'next'])
-  const full = applyUpdate(null, { problem: 'p', goal: 'g', criteria: [{ text: 'c', done: false }], next: 'n' }, 0)
+  expect(b === null ? [] : missingOf(b)).toEqual(['title', 'problem', 'criteria', 'next'])
+  const full = applyUpdate(null, { title: 't', problem: 'p', goal: 'g', criteria: [{ text: 'c', done: false }], next: 'n' }, 0)
   expect(full === null ? ['x'] : missingOf(full)).toEqual([])
   expect(summary(full)).not.toContain('still missing')
 })
@@ -368,8 +385,10 @@ test('the plain words: side tasks, the next thing to do, and archive on the desk
   expect(LABELS.ja.next).toBe('次にやること')
   expect(LABELS.ja.archiveOk).toBe('アーカイブしてよい')
   expect(LABELS.ja.archiveNo).toBe('まだアーカイブしない')
-  expect(LABELS.en.title).toBe('Session overview')
-  expect(LABELS.ja.title).toBe('Session overview')
+  expect(LABELS.en.pane).toBe('Session overview')
+  expect(LABELS.ja.pane).toBe('Session overview')
+  expect(LABELS.ja.title).toBe('題名')
+  expect(LABELS.en.spinOff).toBe('↗')
 })
 
 test('the criteria show a bar: SVG where the surface draws it, cells on the terminal', async ($, on) => {
@@ -381,7 +400,7 @@ test('the criteria show a bar: SVG where the surface draws it, cells on the term
   expect(String(svg?.props.source)).toContain('width="80"')
   await desktop.unmount()
   const terminal = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
-  expect((await terminal.findAll({ type: 'Text' })).map(el => el.text)).toContain(`  ${barCells(1, 3, 20)}`)
+  expect((await terminal.findAll({ type: 'Text' })).map(el => el.text)).toContain(barCells(1, 3, 20))
   await terminal.unmount()
 })
 

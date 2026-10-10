@@ -12,41 +12,53 @@ export type Lang = 'en' | 'ja'
 // The pane's own words; the contents are Claude's, in whatever language the person uses.
 export const LABELS = {
   en: {
-    title: 'Overview',
+    title: 'Session overview',
     problem: 'Problem',
     issue: 'Linear issue',
     goal: 'Goal',
     criteria: 'Done when',
-    offshoots: 'Offshoots',
+    offshoots: 'Side tasks',
     next: 'Next step',
     close: 'Session',
     closeOk: 'Safe to close',
     closeNo: 'Keep it open',
+    archiveOk: 'Safe to archive',
+    archiveNo: 'Do not archive yet',
+    spinOff: 'Start in a new session',
+    spinOffPrompt: (text: string) => `Spin off the side task "${text}" as a task chip (spawn_task), so it can start in a new session.`,
+    refresh: 'Refresh',
+    refreshPrompt: 'Bring the Session overview pane up to date with where the work stands now.',
     none: 'None yet',
     unset: '(not set)',
     missing: 'Still missing',
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
-    opened: 'Opened the Overview pane.',
+    opened: 'Opened the Session overview pane.',
     progress: (done: number, total: number) => `${done} of ${total} done`,
   },
   ja: {
-    title: 'Overview',
+    title: 'Session overview',
     problem: '課題',
     issue: 'Linear issue',
     goal: '目的',
     criteria: '完了条件',
-    offshoots: '派生',
-    next: '次の一手',
+    offshoots: '別件',
+    next: '次にやること',
     close: 'セッション',
     closeOk: '閉じてよい',
     closeNo: 'まだ閉じない',
+    archiveOk: 'アーカイブしてよい',
+    archiveNo: 'まだアーカイブしない',
+    spinOff: '別のセッションで始める',
+    spinOffPrompt: (text: string) => `別件「${text}」を、新しいセッションで始められるタスクチップ（spawn_task）として切り出してください。`,
+    refresh: 'ペインを更新',
+    refreshPrompt: 'Session overview のペインを、いまの作業の状況に合わせて更新してください。',
     none: 'まだありません',
     unset: '（未記入）',
     missing: 'まだ足りない',
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
-    opened: 'Overview のペインを開きました。',
+    opened: 'Session overview のペインを開きました。',
     progress: (done: number, total: number) => `${total}件中${done}件完了`,
   },
 } as const
@@ -56,7 +68,7 @@ export const langOf = (options: unknown): Lang =>
 
 // What the model reads about the tool: when to call it, since nothing else reminds it.
 const GUIDE = [
-  'Update the Overview pane the person watches to see the whole picture of their task.',
+  'Update the Session overview pane the person watches to see the whole picture of their task.',
   'Call it when a task is agreed (the Linear issue tracking it if there is one, the problem it solves, goal, completion criteria, next step),',
   'when a criterion is met,',
   'when work branches off into a follow-up (offshoot), when the next step changes, and with clear when the task ends.',
@@ -77,7 +89,7 @@ export const kickoff = (tool: string): PromptComposeSection => ({
   id: 'overview:kickoff',
   scope: 'session',
   text: [
-    `The person keeps an Overview pane of their current task in view, written through the ${tool} tool.`,
+    `The person keeps a Session overview pane of their current task in view, written through the ${tool} tool.`,
     'When they bring a task to work on (not a quick question), the first request of the session included, call it before you start the work, without being asked:',
     'the problem, goal, completion criteria and next step as far as the request tells them. Leave out what you cannot tell rather than guess;',
     'the pane marks what is still missing, and you fill it in once you learn it. Then keep it current as the tool describes.',
@@ -310,6 +322,9 @@ export const register: Register = (on, options) => {
   // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
   // stays closed (a reload, such as a language change in the config menu, may open it once more).
   let isOpenedUnasked = false
+  // What a button asked Claude for and Claude has not yet answered: pressed again meanwhile, it asks nothing more.
+  // A turn's end clears them, so a button asks again even when Claude found nothing to change on the pane.
+  const asked = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'overview', description: 'Open the pane with the whole picture of the current task' })
@@ -319,6 +334,11 @@ export const register: Register = (on, options) => {
       isOpenedUnasked = true
       void openPane($, t.title).catch(() => undefined)
     }
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    asked.clear()
     return next(e)
   })
 
@@ -359,7 +379,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
-    const { Box, Text, Link } = elements
+    const { Box, Text, Button, Link } = elements
     // The terminal draws no SVG; the bar is drawn in cells there.
     const Svg = e.surface === 'terminal' ? undefined : (elements as Elements['desktop']).Svg
     const b = normalize(await read($, board))
@@ -380,11 +400,31 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
+    const isDesktop = e.surface === 'desktop'
+    // Asks Claude in the person's stead, as a turn of its own once the session is idle.
+    const ask = (text: string) => {
+      if (asked.has(text)) return
+      asked.add(text)
+      void $.prompt.submit({ text })
+    }
+    const refresh = (
+      <Box marginTop={1}>
+        <Button
+          key="refresh"
+          label={t.refresh}
+          onPress={() => ask(t.refreshPrompt)}
+        />
+      </Box>
+    )
+
     const session =
       b?.close
         ? section([
             heading(t.close),
-            <Text color={b.close.isOk ? 'success' : 'warning'}>{`  ${b.close.isOk ? `✓ ${t.closeOk}` : `✗ ${t.closeNo}`}`}</Text>,
+            // Named after the step the person takes: the desktop app archives a session, the terminal closes it.
+            <Text color={b.close.isOk ? 'success' : 'warning'}>
+              {`  ${b.close.isOk ? `✓ ${isDesktop ? t.archiveOk : t.closeOk}` : `✗ ${isDesktop ? t.archiveNo : t.closeNo}`}`}
+            </Text>,
             b.close.reason === '' ? null : quiet(b.close.reason),
           ])
         : null
@@ -394,6 +434,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" width={width}>
           {section([heading(t.goal), quiet(t.empty)])}
           {session}
+          {refresh}
         </Box>
       )
 
@@ -449,11 +490,24 @@ export const register: Register = (on, options) => {
         {section([
           heading(t.offshoots),
           b.offshoots.length === 0 ? quiet(t.none) : null,
-          ...b.offshoots.map(o => (
-            <Text>
-              {`  • ${o.text}`}
-              {o.note !== '' && <Text dimColor>{` (${o.note})`}</Text>}
-            </Text>
+          ...b.offshoots.map((o, i) => (
+            <Box flexDirection="column">
+              <Text>
+                {`  • ${o.text}`}
+                {o.note !== '' && <Text dimColor>{` (${o.note})`}</Text>}
+              </Text>
+              {/* Task chips are the desktop app's: there a side task can start a session of its own. */}
+              {isDesktop && (
+                <Box marginLeft={4}>
+                  <Button
+                    key={`spinoff:${i}`}
+                    label={t.spinOff}
+                    dimColor
+                    onPress={() => ask(t.spinOffPrompt(o.text))}
+                  />
+                </Box>
+              )}
+            </Box>
           )),
         ])}
         {section([
@@ -462,6 +516,7 @@ export const register: Register = (on, options) => {
         ])}
         {session}
         <Text dimColor>{`  ${t.updated} ${clock(b.at)}`}</Text>
+        {refresh}
       </Box>
     )
   })

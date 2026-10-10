@@ -23,6 +23,9 @@ const engine = (on: On) => {
 }
 
 const SURFACES = ['terminal', 'desktop'] as const
+// The desktop app archives a session where the terminal closes it; the pane names the step the person takes.
+const SAFE = { terminal: LABELS.en.closeOk, desktop: LABELS.en.archiveOk } as const
+const KEEP = { terminal: LABELS.en.closeNo, desktop: LABELS.en.archiveNo } as const
 const PANE = { component: 'Pane', requestId: 'overview', props: { title: 'Overview', isFocused: false, bodyColumns: 60, placement: 'dock' } } as never
 
 test('an update replaces what it names and keeps the rest', () => {
@@ -170,7 +173,7 @@ test('the pane shows the issue first once set, then the problem, and close once 
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
     expect(texts.slice(1, 6)).toEqual([LABELS.en.issue, '  ', LABELS.en.problem, '  p', LABELS.en.goal])
     // The clock line depends on the time zone the test runs in, so only its label is checked.
-    expect(texts.slice(-4, -1)).toEqual([LABELS.en.close, `  ✗ ${LABELS.en.closeNo}`, '  unpushed'])
+    expect(texts.slice(-4, -1)).toEqual([LABELS.en.close, `  ✗ ${KEEP[surface]}`, '  unpushed'])
     expect(texts.at(-1)?.startsWith(`  ${LABELS.en.updated} `)).toBe(true)
     await ui.unmount()
   }
@@ -178,8 +181,8 @@ test('the pane shows the issue first once set, then the problem, and close once 
   await $.tool.call({ tool: 'mcp__overview__update', close: { ok: true } } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
-    const safe = await ui.find({ type: 'Text', text: LABELS.en.closeOk })
-    expect(safe?.text).toBe(`  ✓ ${LABELS.en.closeOk}`)
+    const safe = await ui.find({ type: 'Text', text: SAFE[surface] })
+    expect(safe?.text).toBe(`  ✓ ${SAFE[surface]}`)
     expect(safe?.props.color).toBe('success')
     await ui.unmount()
   }
@@ -192,7 +195,7 @@ test('a cleared pane still says whether the session can be closed', async ($, on
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    expect(texts).toEqual([LABELS.en.goal, `  ${LABELS.en.empty}`, LABELS.en.close, `  ✓ ${LABELS.en.closeOk}`, '  merged'])
+    expect(texts).toEqual([LABELS.en.goal, `  ${LABELS.en.empty}`, LABELS.en.close, `  ✓ ${SAFE[surface]}`, '  merged'])
     await ui.unmount()
   }
 })
@@ -220,7 +223,7 @@ test('/overview opens the pane, titled in English by default', async ($, on) => 
   })
   const ran = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
   expect(ran.text).toBe(LABELS.en.opened)
-  expect(opened).toEqual(['Overview'])
+  expect(opened).toEqual(['Session overview'])
 })
 
 test('the pane opens unasked where someone watches: the REPL, or a surface such as the desktop app', () => {
@@ -298,9 +301,75 @@ test('the missing line stands alone: the pane offers no button to fill it', asyn
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: new RegExp(LABELS.en.missing) })).toBeDefined()
-    expect(await ui.findAll({ type: 'Button' })).toEqual([])
+    expect(await ui.find({ type: 'Button', key: 'fill' })).toBe(undefined)
     await ui.unmount()
   }
+})
+
+test('the refresh button asks Claude to bring the pane up to date, once until Claude has answered', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  const sent: string[] = []
+  on('prompt.submit', async (_$, e) => {
+    sent.push(e.text)
+    return { drop: 'test' } as never
+  })
+  on('turn.complete', async () => ({ text: '' }) as never)
+  // Offered on an empty pane too: there it asks Claude to write the task down.
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    expect(await ui.find({ type: 'Button', key: 'refresh' })).toBeDefined()
+    await ui.unmount()
+  }
+  await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
+    await ui.press({ key: 'refresh' })
+    await ui.press({ key: 'refresh' })
+    await ui.unmount()
+  }
+  // Pressed again before Claude has answered, it asks nothing more, whichever surface the press came from.
+  expect(sent).toEqual([LABELS.en.refreshPrompt])
+  // Once the turn ends it asks again, even when Claude found nothing to change on the pane.
+  await $.turn.complete({ reason: 'answer' } as never)
+  const again = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
+  await again.press({ key: 'refresh' })
+  await again.unmount()
+  expect(sent).toEqual([LABELS.en.refreshPrompt, LABELS.en.refreshPrompt])
+})
+
+test('each side task has a button on the desktop that asks Claude to spin it off as a task chip', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
+  const sent: string[] = []
+  on('prompt.submit', async (_$, e) => {
+    sent.push(e.text)
+    return { drop: 'test' } as never
+  })
+  on('turn.complete', async () => ({ text: '' }) as never)
+  await $.tool.call({ tool: 'mcp__overview__update', offshoots: [{ text: 'Fix the date picker' }, { text: 'Rename the tab', note: 'later' }] } as never)
+  // Task chips are the desktop app's; the terminal has nowhere to start one from.
+  const terminal = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
+  expect(await terminal.find({ type: 'Button', key: 'spinoff:0' })).toBe(undefined)
+  await terminal.unmount()
+  const desktop = await $.ui.mount({ plugin: 'overview', surface: 'desktop', ...PANE })
+  expect((await desktop.find({ type: 'Button', key: 'spinoff:1' }))?.props.label).toBe(LABELS.en.spinOff)
+  await desktop.press({ key: 'spinoff:1' })
+  await desktop.press({ key: 'spinoff:1' })
+  await desktop.press({ key: 'spinoff:0' })
+  expect(sent).toEqual([LABELS.en.spinOffPrompt('Rename the tab'), LABELS.en.spinOffPrompt('Fix the date picker')])
+  // Once Claude has answered, a press asks again.
+  await $.turn.complete({ reason: 'answer' } as never)
+  await desktop.press({ key: 'spinoff:1' })
+  await desktop.unmount()
+  expect(sent.at(-1)).toBe(LABELS.en.spinOffPrompt('Rename the tab'))
+})
+
+test('the plain words: side tasks, the next thing to do, and archive on the desktop', () => {
+  expect(LABELS.ja.offshoots).toBe('別件')
+  expect(LABELS.ja.next).toBe('次にやること')
+  expect(LABELS.ja.archiveOk).toBe('アーカイブしてよい')
+  expect(LABELS.ja.archiveNo).toBe('まだアーカイブしない')
+  expect(LABELS.en.title).toBe('Session overview')
+  expect(LABELS.ja.title).toBe('Session overview')
 })
 
 test('the criteria show a bar: SVG where the surface draws it, cells on the terminal', async ($, on) => {

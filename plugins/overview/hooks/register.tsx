@@ -455,8 +455,9 @@ export const register: Register = (on, options) => {
         {/* The cover, read on coming back to the session: what the task is, what comes next, how far it is,
             and whether the session can be put away. */}
         {section([
-          b.title === '' ? unsetCover(t.title) : <Text bold>{b.title}</Text>,
-          b.next === '' ? unsetCover(t.next) : <Text bold color="suggestion">{`→ ${b.next}`}</Text>,
+          // Each line starts with its mark, so the cover reads down a column: 📌 the task, 👉 what comes next, 💬 the session.
+          b.title === '' ? unsetCover(t.title) : <Text bold>{`📌 ${b.title}`}</Text>,
+          b.next === '' ? unsetCover(t.next) : <Text bold color="suggestion">{`👉 ${b.next}`}</Text>,
           b.criteria.length === 0 ? null : (
             <Box flexDirection="row">
               {Svg !== undefined

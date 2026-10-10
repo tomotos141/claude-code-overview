@@ -418,6 +418,7 @@ export const register: Register = (on, options) => {
       <Button
         key="refresh"
         label={t.refresh}
+        variant="primary"
         onPress={() => ask(t.refreshPrompt)}
       />
     )
@@ -515,9 +516,10 @@ export const register: Register = (on, options) => {
             </Box>
           )),
         ])}
-        <Box flexDirection="row">
-          <Text dimColor>{`  ${t.updated} ${clock(b.at)}  `}</Text>
+        {/* Buttons sit on the left, as the side tasks' ↗ do; the time follows the one that refreshes it. */}
+        <Box flexDirection="row" marginLeft={2}>
           {refresh}
+          <Text dimColor>{` ${t.updated} ${clock(b.at)}`}</Text>
         </Box>
       </Box>
     )

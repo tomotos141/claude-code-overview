@@ -1,6 +1,6 @@
 {
   "name": "overview",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "A pane with the current task at a glance: Linear issue, problem, goal, completion criteria, side tasks, next step and whether the session can be closed, kept current by Claude",
   "author": { "name": "tomotos141" },
   "homepage": "https://github.com/tomotos141/claude-code-overview",

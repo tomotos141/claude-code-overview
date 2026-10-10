@@ -191,7 +191,8 @@ test('the cover comes first: the title, the next step, how far it is and whether
     const order = [LABELS.en.issue, LABELS.en.problem, LABELS.en.goal, LABELS.en.offshoots].map(h => texts.indexOf(h))
     expect(order[0]).toBeGreaterThan(rule)
     expect([...order].sort((a, z) => a - z)).toEqual(order)
-    expect(texts.at(-1)?.startsWith(`  ${LABELS.en.updated} `)).toBe(true)
+    // The ↻ button comes first on the last line, left like the ↗ ones, then the time it refreshes.
+    expect(texts.at(-1)?.startsWith(` ${LABELS.en.updated} `)).toBe(true)
     await ui.unmount()
   }
 
@@ -335,7 +336,10 @@ test('the refresh button asks Claude to bring the pane up to date, once until Cl
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     // A reload mark beside the time it was last updated.
-    expect((await ui.find({ type: 'Button', key: 'refresh' }))?.props.label).toBe('↻')
+    const button = await ui.find({ type: 'Button', key: 'refresh' })
+    expect(button?.props.label).toBe('↻')
+    // The pane's one colored button: the side tasks' ↗ stay plain, so it stands out without competing with them.
+    expect(button?.props.variant).toBe('primary')
     await ui.unmount()
   }
   await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)

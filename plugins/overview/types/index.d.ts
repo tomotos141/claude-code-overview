@@ -3,6 +3,7 @@ export type Offshoot = { text: string; note: string }
 export type Issue = { id: string; url: string }
 export type Close = { isOk: boolean; reason: string }
 export type Board = {
+  title: string
   problem: string
   issue: Issue | null
   goal: string

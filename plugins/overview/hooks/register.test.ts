@@ -334,7 +334,8 @@ test('the refresh button asks Claude to bring the pane up to date, once until Cl
   // Offered on an empty pane too: there it asks Claude to write the task down.
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
-    expect(await ui.find({ type: 'Button', key: 'refresh' })).toBeDefined()
+    // A reload mark beside the time it was last updated.
+    expect((await ui.find({ type: 'Button', key: 'refresh' }))?.props.label).toBe('↻')
     await ui.unmount()
   }
   await $.tool.call({ tool: 'mcp__overview__update', goal: 'g' } as never)

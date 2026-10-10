@@ -455,8 +455,9 @@ export const register: Register = (on, options) => {
         {/* The cover, read on coming back to the session: what the task is, what comes next, how far it is,
             and whether the session can be put away. */}
         {section([
-          b.title === '' ? unsetCover(t.title) : <Text bold>{b.title}</Text>,
-          b.next === '' ? unsetCover(t.next) : <Text bold color="suggestion">{`→ ${b.next}`}</Text>,
+          // Each line starts with its mark, so the cover reads down a column: 📌 the task, 👉 what comes next, 💬 the session.
+          b.title === '' ? unsetCover(t.title) : <Text bold>{`📌 ${b.title}`}</Text>,
+          b.next === '' ? unsetCover(t.next) : <Text bold color="suggestion">{`👉 ${b.next}`}</Text>,
           b.criteria.length === 0 ? null : (
             <Box flexDirection="row">
               {Svg !== undefined
@@ -467,7 +468,8 @@ export const register: Register = (on, options) => {
           ),
           b.close === null ? null : (
             <Text color={b.close.isOk ? 'success' : 'warning'}>
-              {closeWords(b.close.isOk)}
+              {/* A speech bubble: the line is about this session (this conversation), not the task. */}
+              {`💬 ${closeWords(b.close.isOk)}`}
               {b.close.reason !== '' && <Text dimColor>{` — ${b.close.reason}`}</Text>}
             </Text>
           ),

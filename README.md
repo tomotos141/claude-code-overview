@@ -3,10 +3,10 @@
 A pane for Claude Code that keeps the current task in view. On top, a cover you read when you come back to the session: **the task's title, what comes next, how far it is, and whether the session can be closed**. Below a rule, the details: the Linear issue that tracks it, if there is one, the problem it solves, what it is for, what "done" means, and what branched off. Claude writes it as the work moves, so a long session never loses its thread.
 
 ```
-Onboarding checklist
-→ Ask the team to review the copy
+📌 Onboarding checklist
+👉 Ask the team to review the copy
 ██████████░░░░░░░░░░  2/4
-✗ Keep it open — waiting for the team's review
+💬 ✗ Keep it open — waiting for the team's review
 ────────────────────────────────────────
 Linear issue
   ABC-123            (opens the issue)

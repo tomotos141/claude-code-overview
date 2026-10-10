@@ -177,11 +177,13 @@ test('the cover comes first: the title, the next step, how far it is and whether
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const texts = (await ui.findAll({ type: 'Text' })).map(el => el.text)
-    expect(texts.slice(0, 2)).toEqual(['Fix the date picker', '→ Write the test'])
-    expect((await ui.find({ type: 'Text', text: 'Fix the date picker' }))?.props.bold).toBe(true)
+    // Each line of the cover starts with its mark: a pin for the task, a pointing hand for what comes next.
+    expect(texts.slice(0, 2)).toEqual(['📌 Fix the date picker', '👉 Write the test'])
+    expect((await ui.find({ type: 'Text', text: '📌 Fix the date picker' }))?.props.bold).toBe(true)
     // How far it is, then whether the session can be put away, named after the step the surface takes.
     const count = texts.indexOf('  1/2')
-    const close = texts.findIndex(x => x.startsWith(`✗ ${KEEP[surface]}`))
+    // A speech bubble says the line is about this session, ahead of the check or cross.
+    const close = texts.findIndex(x => x.startsWith(`💬 ✗ ${KEEP[surface]}`))
     const rule = texts.findIndex(x => x.startsWith('─'))
     expect(count).toBeGreaterThan(1)
     expect(close).toBeGreaterThan(count)
@@ -201,7 +203,7 @@ test('the cover comes first: the title, the next step, how far it is and whether
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
     const safe = await ui.find({ type: 'Text', text: SAFE[surface] })
-    expect(safe?.text).toBe(`✓ ${SAFE[surface]}`)
+    expect(safe?.text).toBe(`💬 ✓ ${SAFE[surface]}`)
     expect(safe?.props.color).toBe('success')
     await ui.unmount()
   }

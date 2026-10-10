@@ -516,8 +516,10 @@ export const register: Register = (on, options) => {
             </Box>
           )),
         ])}
-        {/* Buttons sit on the left, as the side tasks' ↗ do; the time follows the one that refreshes it. */}
-        <Box flexDirection="row" marginLeft={2}>
+        {/* Buttons sit on the left, set in as the side tasks' ↗ are (spaces, not a margin: on the desktop the two
+            differ in width); the time follows the one that refreshes it. */}
+        <Box flexDirection="row">
+          <Text>{'  '}</Text>
           {refresh}
           <Text dimColor>{` ${t.updated} ${clock(b.at)}`}</Text>
         </Box>

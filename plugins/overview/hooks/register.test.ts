@@ -191,8 +191,9 @@ test('the cover comes first: the title, the next step, how far it is and whether
     const order = [LABELS.en.issue, LABELS.en.problem, LABELS.en.goal, LABELS.en.offshoots].map(h => texts.indexOf(h))
     expect(order[0]).toBeGreaterThan(rule)
     expect([...order].sort((a, z) => a - z)).toEqual(order)
-    // The ↻ button comes first on the last line, left like the ↗ ones, then the time it refreshes.
+    // The ↻ button comes first on the last line, set in by the same two spaces as the ↗ ones, then the time.
     expect(texts.at(-1)?.startsWith(` ${LABELS.en.updated} `)).toBe(true)
+    expect(texts.at(-2)).toBe('  ')
     await ui.unmount()
   }
 

@@ -471,7 +471,7 @@ export const register: Register = (on, options) => {
             </Text>
           ),
         ])}
-        {section([<Text dimColor>{'─'.repeat(Math.max(8, Math.min(width - 2, 40)))}</Text>])}
+        {section([<Text dimColor>{'─'.repeat(Math.max(1, Math.min(width - 2, 40)))}</Text>])}
         {b.issue
           ? section([
               heading(t.issue),

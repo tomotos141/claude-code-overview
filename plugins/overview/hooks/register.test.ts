@@ -1,7 +1,7 @@
 import type { CommandRunInput, On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { LABELS, barCells, barSvg, boardText, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
+import { LABELS, barCells, barSvg, isWatched, kickoff, missingOf, withKickoff, applyUpdate, langOf, normalize, summary } from './register'
 
 // What the engine answers beneath the plugin when a session starts.
 // The tool is named after the plugin as installed, which need not be the name the module starts with.
@@ -380,57 +380,4 @@ test('the composed system prompt carries the kickoff, and the tool is listed in 
   expect((await compose([], [INSTALLED])).sections.map(s => s.id)).not.toContain('overview:kickoff')
   expect((await $.tool.describe({ tool: INSTALLED, description: 'd' } as never)).isDeferred).toBe(false)
   expect((await $.tool.describe({ tool: 'mcp__other__update', description: 'd' } as never)).isDeferred).toBe(true)
-})
-
-test('the board reads as text in the pane\'s own words, for an app that draws no pane', () => {
-  const full = applyUpdate(
-    null,
-    {
-      issue: { id: 'ABC-7', url: 'https://linear.app/acme/issue/ABC-7' },
-      problem: 'p',
-      goal: 'g',
-      criteria: [{ text: 'a', done: true }, { text: 'b', done: false }],
-      offshoots: [{ text: 'o', note: 'separate PR' }],
-      close: { ok: false, reason: 'r' },
-    },
-    0,
-  )
-  const lines = boardText(full, LABELS.en).split('\n')
-  expect(lines.slice(0, -1)).toEqual([
-    '! Still missing: Next step',
-    '',
-    'Linear issue: ABC-7 (https://linear.app/acme/issue/ABC-7)',
-    '',
-    'Problem: p',
-    '',
-    'Goal: g',
-    '',
-    'Done when 1/2:',
-    '- ○ b',
-    '- ✓ a',
-    '',
-    'Offshoots:',
-    '- o (separate PR)',
-    '',
-    'Next step: None yet',
-    '',
-    'Session: ✗ Keep it open (r)',
-    '',
-  ])
-  expect(lines.at(-1)).toMatch(/^Updated \d\d:\d\d$/)
-  expect(boardText(applyUpdate(null, { problem: 'p', goal: 'g', criteria: [{ text: 'a', done: true }], next: 'n' }, 0), LABELS.ja)).toContain(
-    ['課題: p', '', '目的: g', '', '完了条件 1/1:', '- ✓ a', '', '次の一手: → n'].join('\n'),
-  )
-  // Nothing agreed yet reads as the pane's placeholder, with the session's verdict when there is one.
-  expect(boardText(null, LABELS.en)).toBe(LABELS.en.empty)
-  expect(boardText(applyUpdate(null, { clear: true, close: { ok: true } }, 0), LABELS.en)).toBe(`${LABELS.en.empty}\n\nSession: ✓ Safe to close`)
-})
-
-test('/overview answers with the board as text where no app places the pane, such as the VS Code extension', async ($, on) => {
-  on('clock.now', async () => ({ value: 0 }) as never)
-  on('ui.open', async () => ({ value: { isPlaced: false, reason: 'the attached surfaces place no panes' } }) as never)
-  await $.tool.call({ tool: 'mcp__overview__update', problem: 'p', goal: 'g' } as never)
-  const ran = await $.command.run({ command: 'overview', args: '' } as CommandRunInput)
-  expect(ran.text).not.toContain(LABELS.en.opened)
-  expect(ran.text?.startsWith(`${LABELS.en.notDrawn}\n\n! Still missing: Done when / Next step\n\nProblem: p\n\nGoal: g`)).toBe(true)
 })

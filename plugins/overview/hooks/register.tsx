@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Elements, EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput, UiOpenResult } from 'claude-code'
+import type { Elements, EngineInterface, PromptComposeInput, PromptComposeSection, Register, RenderChildren, SessionStartInput } from 'claude-code'
 
 import type { Board, Close, Criterion, Issue, Offshoot } from '../types'
 
@@ -28,7 +28,6 @@ export const LABELS = {
     empty: 'Claude fills this in once a task is agreed.',
     updated: 'Updated',
     opened: 'Opened the Overview pane.',
-    notDrawn: 'This app has no place for the pane, so here is the overview as text.',
     progress: (done: number, total: number) => `${done} of ${total} done`,
   },
   ja: {
@@ -48,7 +47,6 @@ export const LABELS = {
     empty: '作業が決まると、ここに Claude が書き込みます。',
     updated: '更新',
     opened: 'Overview のペインを開きました。',
-    notDrawn: 'このアプリにはペインを出す場所がないので、内容を文字で出します。',
     progress: (done: number, total: number) => `${total}件中${done}件完了`,
   },
 } as const
@@ -301,39 +299,9 @@ const clock = (ms: number): string => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// The board as text, in the pane's own words, for an app that draws no pane: each field a paragraph and each
-// list a dash list, so it reads the same whether the app shows the text as written or as Markdown.
-export const boardText = (kept: Board | null, t: (typeof LABELS)[Lang]): string => {
-  const b = normalize(kept)
-  const session = b?.close
-    ? `${t.close}: ${b.close.isOk ? `✓ ${t.closeOk}` : `✗ ${t.closeNo}`}${b.close.reason === '' ? '' : ` (${b.close.reason})`}`
-    : null
-  const joined = (blocks: readonly (string | null)[]): string => blocks.filter((s): s is string => s !== null).join('\n\n')
-  if (b === null || isBlank(b)) return joined([t.empty, session])
-  const missing = missingOf(b)
-  const doneCount = b.criteria.filter(c => c.isDone).length
-  return joined([
-    missing.length === 0 ? null : `! ${t.missing}: ${missing.map(k => t[k]).join(' / ')}`,
-    b.issue ? `${t.issue}: ${b.issue.id}${b.issue.url === '' ? '' : ` (${b.issue.url})`}` : null,
-    `${t.problem}: ${b.problem === '' ? t.unset : b.problem}`,
-    `${t.goal}: ${b.goal === '' ? t.unset : b.goal}`,
-    b.criteria.length === 0
-      ? `${t.criteria}: ${t.none}`
-      : [
-          `${t.criteria} ${doneCount}/${b.criteria.length}:`,
-          ...b.criteria.filter(c => !c.isDone).map(c => `- ○ ${c.text}`),
-          ...b.criteria.filter(c => c.isDone).map(c => `- ✓ ${c.text}`),
-        ].join('\n'),
-    b.offshoots.length === 0
-      ? null
-      : [`${t.offshoots}:`, ...b.offshoots.map(o => `- ${o.text}${o.note === '' ? '' : ` (${o.note})`}`)].join('\n'),
-    `${t.next}: ${b.next === '' ? t.none : `→ ${b.next}`}`,
-    session,
-    `${t.updated} ${clock(b.at)}`,
-  ])
+async function openPane($: EngineInterface, title: string) {
+  await $.ui.open({ id: PANE, title })
 }
-
-const openPane = ($: EngineInterface, title: string): Promise<UiOpenResult> => $.ui.open({ id: PANE, title })
 
 export const register: Register = (on, options) => {
   const t = LABELS[langOf(options)]
@@ -375,11 +343,8 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'overview' }, async $ => {
-    const opened: UiOpenResult | undefined = await openPane($, t.title)
-    // Asked for, the pane is placed wherever an app has a place for panes. Where none has (the VS Code
-    // extension's panel), saying it opened would point at nothing: the board is answered as text instead.
-    if (opened?.isPlaced !== false) return { text: t.opened }
-    return { text: `${t.notDrawn}\n\n${boardText(await read($, board), t)}` }
+    await openPane($, t.title)
+    return { text: t.opened }
   })
 
   on('tool.call', async ($, e, next) => {

@@ -49,7 +49,7 @@ Session
 
 A Claude Code build that supports plugin hook modules ("mods"). Developed against Claude Code 2.1.282 and later.
 
-The pane shows in the terminal (the `claude` CLI) and in the Claude desktop app. The Claude Code extension for VS Code has no place for panes in its panel (Claude Code's [mods reference](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) lists `Pane` for the terminal and the desktop app only), so nothing appears there. In such an app `/overview` answers with the same contents as text, and Claude keeps them current all the same. To see the pane inside VS Code, run the `claude` CLI in its integrated terminal.
+The pane has been checked in the terminal (the `claude` CLI) and in the Claude desktop app, the two places Claude Code's [mods reference](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) lists for `Pane`. In the Claude Code extension for VS Code it did not show when a user tried it (October 2026): the tool and `/overview` run, but nothing is drawn. To see the pane, use the desktop app or the `claude` CLI in a terminal.
 
 ## Install
 
@@ -63,7 +63,7 @@ claude plugin install overview@claude-code-overview
 
 For Japanese headings, add `--config language=ja` to the install command.
 
-Then start a new session. The pane opens when the session starts, in the terminal and in the desktop app alike (Claude Code decides where it sits; a terminal narrower than 144 columns holds it back until it widens); if you don't see it, type `/overview` (in an app with no place for panes, that prints the contents as text; see Requirements). Once you close it, it is not opened for you again until the plugin reloads (a new session, or a setting changed in `/config`).
+Then start a new session. The pane opens when the session starts, in the terminal and in the desktop app alike (Claude Code decides where it sits; a terminal narrower than 144 columns holds it back until it widens); if you don't see it, type `/overview`. Once you close it, it is not opened for you again until the plugin reloads (a new session, or a setting changed in `/config`).
 
 ## Settings
 
@@ -103,7 +103,7 @@ Claude Code に、いまの作業の全体像を出す「Overview」ペインで
 
 plugin の hook モジュール（mods）に対応した Claude Code。2.1.282 以降を対象に作っています。
 
-ペインが出るのは、ターミナル（`claude` コマンド）と Claude デスクトップアプリです。VS Code の Claude Code 拡張機能のパネルには、ペインを出す場所がありません（Claude Code の [mods リファレンス](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) で `Pane` を描くのはターミナルとデスクトップアプリだけです）。そのため、そこには何も出ません。こうしたアプリでは、`/overview` と打つと同じ内容が文字で出ます。Claude が内容を書き換えていくのは変わりません。VS Code の中でペインを見たいときは、VS Code のターミナルで `claude` コマンドを動かしてください。
+ペインが出ることを確かめているのは、ターミナル（`claude` コマンド）と Claude デスクトップアプリです。Claude Code の [mods リファレンス](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) が `Pane` の描画先として挙げているのも、この2つです。VS Code の Claude Code 拡張機能では、利用者が試した時点（2026年10月）でペインは出ませんでした。ツールと `/overview` は動きますが、何も描かれません。ペインを見るときは、デスクトップアプリか、ターミナルの `claude` コマンドを使ってください。
 
 ### 入れ方
 
@@ -117,7 +117,7 @@ claude plugin install overview@claude-code-overview --config language=ja
 
 見出しを英語にしたいときは `--config language=ja` を外してください。
 
-新しいセッションを開くと、ターミナルでもデスクトップアプリでもペインが開きます（どこに置かれるかは Claude Code が決めます。ターミナルの幅が144桁より狭いときは、広がるまで待ちます）。見当たらないときは `/overview` と打ってください（ペインを出す場所がないアプリでは、内容が文字で出ます。「必要なもの」を見てください）。一度閉じると、plugin が読み込み直されるまで（新しいセッションを開く、`/config` で設定を変える など）は自動では開きません。
+新しいセッションを開くと、ターミナルでもデスクトップアプリでもペインが開きます（どこに置かれるかは Claude Code が決めます。ターミナルの幅が144桁より狭いときは、広がるまで待ちます）。見当たらないときは `/overview` と打ってください。一度閉じると、plugin が読み込み直されるまで（新しいセッションを開く、`/config` で設定を変える など）は自動では開きません。
 
 ### 設定
 

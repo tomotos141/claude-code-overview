@@ -41,13 +41,15 @@ Session
 - The Linear issue is optional: it shows first, only when the task has one, as its identifier (`ABC-123`), which opens the issue when Claude has its link.
 - **Session** says whether you can close the session now without losing anything (✓ safe to close / ✗ keep it open) and why. Claude judges it: work that would be lost (uncommitted or unpushed changes), something still running, or a reply or approval still awaited keep it open; with none of those — including work that changed nothing — it is safe to close. It shows once Claude has judged it. When a finished task is cleared, it stays if Claude sends it along, as it is told to, and a "keep it open" stays even if Claude forgets. A "safe to close" disappears as soon as the work moves on, so a stale one never lingers.
 - What a task still lacks stands out: an empty problem, goal, completion criteria or next step is marked `!` in the theme's warning color, and a line at the top names them all ("Still missing: Problem / Next step"). Claude leaves out what it cannot tell from your request rather than guess, so the marks show what to tell it.
-- A bar under "Done when" shows how far the criteria are done: drawn as an image in the desktop app, the editor and the phone, and in block characters in the terminal. It is full only when every criterion is done.
+- A bar under "Done when" shows how far the criteria are done: drawn as an image in the desktop app and the phone, and in block characters in the terminal. It is full only when every criterion is done.
 - Open items are listed first; finished ones are dimmed with a check. Lists are capped at 12 items and lines at 160 characters (the issue's link is kept whole, up to 2048 characters), so the pane stays a glance.
 - The plugin makes no network requests of its own. What Claude writes to the pane is part of the conversation, like any tool call, so treat it as you would anything else you tell Claude.
 
 ## Requirements
 
 A Claude Code build that supports plugin hook modules ("mods"). Developed against Claude Code 2.1.282 and later.
+
+The pane has been checked in the terminal (the `claude` CLI) and in the Claude desktop app, the two places Claude Code's [mods reference](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) lists for `Pane`. In the Claude Code extension for VS Code it did not show when a user tried it (October 2026): the tool and `/overview` run, but nothing is drawn. To see the pane, use the desktop app or the `claude` CLI in a terminal.
 
 ## Install
 
@@ -93,13 +95,15 @@ Claude Code に、いまの作業の全体像を出す「Overview」ペインで
 - Linear issue は、作業に紐づく issue があるときだけ、一番上に出ます。番号（`ABC-123`）を出し、Claude がリンクを知っていれば、番号を押すと issue が開きます。
 - **セッション** の欄は、いま閉じても何も失わないか（✓ 閉じてよい ／ ✗ まだ閉じない）と、その理由を出します。判断するのは Claude で、失われる変更（未コミット・未 push）、動いている処理、待っている返事や承認があれば「まだ閉じない」、どれもなければ（何も変えなかった作業も含めて）「閉じてよい」にします。Claude が判断してから出ます。終わった作業を空にするとき、Claude がこの欄を一緒に送れば残ります（そう指示してあります）。「まだ閉じない」は、送り忘れても残ります。「閉じてよい」は、そのあと作業が動いたら消えるので、古い「閉じてよい」が残ることはありません。
 - 作業に足りない情報は目立たせます。課題・目的・完了条件・次の一手のうち空いているものには、テーマの警告色で `!` を付け、一番上の行にまとめて出します（「まだ足りない: 課題 / 次の一手」）。Claude は依頼から読み取れないことを推測で埋めずに空けておくので、この印を見れば何を伝えればよいかがわかります。
-- 「完了条件」の下に、どこまで済んだかを示すバーが出ます。デスクトップアプリ・エディタ・スマートフォンでは図として、ターミナルでは文字で描きます。満タンになるのは、完了条件がすべて済んだときだけです。
+- 「完了条件」の下に、どこまで済んだかを示すバーが出ます。デスクトップアプリ・スマートフォンでは図として、ターミナルでは文字で描きます。満タンになるのは、完了条件がすべて済んだときだけです。
 - 残っている完了条件が上に、済んだものは ✓ 付きの薄い文字で下に並びます。一覧は12件、1行は160字までで切るので（issue のリンクは2048字まで切りません）、ひと目で読める大きさに収まります。
 - plugin 自身は外部と通信しません。ただし Claude がペインに書く内容は、ほかのツール呼び出しと同じく会話の一部として扱われます。Claude に話してよい範囲の内容にしてください。
 
 ### 必要なもの
 
 plugin の hook モジュール（mods）に対応した Claude Code。2.1.282 以降を対象に作っています。
+
+ペインが出ることを確かめているのは、ターミナル（`claude` コマンド）と Claude デスクトップアプリです。Claude Code の [mods リファレンス](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) が `Pane` の描画先として挙げているのも、この2つです。VS Code の Claude Code 拡張機能では、利用者が試した時点（2026年10月）でペインは出ませんでした。ツールと `/overview` は動きますが、何も描かれません。ペインを見るときは、デスクトップアプリか、ターミナルの `claude` コマンドを使ってください。
 
 ### 入れ方
 

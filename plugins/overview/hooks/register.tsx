@@ -322,10 +322,9 @@ export const register: Register = (on, options) => {
   // Opened once unasked per load of this module; after that only the person opens it, so a pane they closed
   // stays closed (a reload, such as a language change in the config menu, may open it once more).
   let isOpenedUnasked = false
-  // The board the refresh button last asked about, and the side tasks already asked to be spun off on each board:
-  // pressed again before the board changes, a button asks nothing more.
-  let refreshAskedAt: number | null = null
-  const spunOff = new Set<string>()
+  // What a button asked Claude for and Claude has not yet answered: pressed again meanwhile, it asks nothing more.
+  // A turn's end clears them, so a button asks again even when Claude found nothing to change on the pane.
+  const asked = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'overview', description: 'Open the pane with the whole picture of the current task' })
@@ -335,6 +334,11 @@ export const register: Register = (on, options) => {
       isOpenedUnasked = true
       void openPane($, t.title).catch(() => undefined)
     }
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    asked.clear()
     return next(e)
   })
 
@@ -397,19 +401,18 @@ export const register: Register = (on, options) => {
     )
 
     const isDesktop = e.surface === 'desktop'
-    const at = b?.at ?? -1
     // Asks Claude in the person's stead, as a turn of its own once the session is idle.
-    const ask = (text: string) => void $.prompt.submit({ text })
+    const ask = (text: string) => {
+      if (asked.has(text)) return
+      asked.add(text)
+      void $.prompt.submit({ text })
+    }
     const refresh = (
       <Box marginTop={1}>
         <Button
           key="refresh"
           label={t.refresh}
-          onPress={() => {
-            if (refreshAskedAt === at) return
-            refreshAskedAt = at
-            ask(t.refreshPrompt)
-          }}
+          onPress={() => ask(t.refreshPrompt)}
         />
       </Box>
     )
@@ -500,12 +503,7 @@ export const register: Register = (on, options) => {
                     key={`spinoff:${i}`}
                     label={t.spinOff}
                     dimColor
-                    onPress={() => {
-                      const asked = `${at}:${o.text}`
-                      if (spunOff.has(asked)) return
-                      spunOff.add(asked)
-                      ask(t.spinOffPrompt(o.text))
-                    }}
+                    onPress={() => ask(t.spinOffPrompt(o.text))}
                   />
                 </Box>
               )}

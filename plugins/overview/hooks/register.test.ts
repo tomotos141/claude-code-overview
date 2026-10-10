@@ -306,15 +306,14 @@ test('the missing line stands alone: the pane offers no button to fill it', asyn
   }
 })
 
-test('the refresh button asks Claude to bring the pane up to date, once per board', async ($, on) => {
-  // Each update a minute later, so the board after the second one is a new one.
-  let now = 0
-  on('clock.now', async () => ({ value: (now += 60_000) }) as never)
+test('the refresh button asks Claude to bring the pane up to date, once until Claude has answered', async ($, on) => {
+  on('clock.now', async () => ({ value: 0 }) as never)
   const sent: string[] = []
   on('prompt.submit', async (_$, e) => {
     sent.push(e.text)
     return { drop: 'test' } as never
   })
+  on('turn.complete', async () => ({ text: '' }) as never)
   // Offered on an empty pane too: there it asks Claude to write the task down.
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'overview', surface, ...PANE })
@@ -328,9 +327,10 @@ test('the refresh button asks Claude to bring the pane up to date, once per boar
     await ui.press({ key: 'refresh' })
     await ui.unmount()
   }
-  // Pressed again before the board changes, it asks nothing more, whichever surface the press came from.
+  // Pressed again before Claude has answered, it asks nothing more, whichever surface the press came from.
   expect(sent).toEqual([LABELS.en.refreshPrompt])
-  await $.tool.call({ tool: 'mcp__overview__update', next: 'n' } as never)
+  // Once the turn ends it asks again, even when Claude found nothing to change on the pane.
+  await $.turn.complete({ reason: 'answer' } as never)
   const again = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
   await again.press({ key: 'refresh' })
   await again.unmount()
@@ -344,6 +344,7 @@ test('each side task has a button on the desktop that asks Claude to spin it off
     sent.push(e.text)
     return { drop: 'test' } as never
   })
+  on('turn.complete', async () => ({ text: '' }) as never)
   await $.tool.call({ tool: 'mcp__overview__update', offshoots: [{ text: 'Fix the date picker' }, { text: 'Rename the tab', note: 'later' }] } as never)
   // Task chips are the desktop app's; the terminal has nowhere to start one from.
   const terminal = await $.ui.mount({ plugin: 'overview', surface: 'terminal', ...PANE })
@@ -354,8 +355,12 @@ test('each side task has a button on the desktop that asks Claude to spin it off
   await desktop.press({ key: 'spinoff:1' })
   await desktop.press({ key: 'spinoff:1' })
   await desktop.press({ key: 'spinoff:0' })
-  await desktop.unmount()
   expect(sent).toEqual([LABELS.en.spinOffPrompt('Rename the tab'), LABELS.en.spinOffPrompt('Fix the date picker')])
+  // Once Claude has answered, a press asks again.
+  await $.turn.complete({ reason: 'answer' } as never)
+  await desktop.press({ key: 'spinoff:1' })
+  await desktop.unmount()
+  expect(sent.at(-1)).toBe(LABELS.en.spinOffPrompt('Rename the tab'))
 })
 
 test('the plain words: side tasks, the next thing to do, and archive on the desktop', () => {

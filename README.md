@@ -6,7 +6,7 @@ A pane for Claude Code that keeps the current task in view. On top, a cover you 
 Onboarding checklist
 → Ask the team to review the copy
 ██████████░░░░░░░░░░  2/4
-✗ Keep it open — waiting for the team's review
+💬 ✗ Keep it open — waiting for the team's review
 ────────────────────────────────────────
 Linear issue
   ABC-123            (opens the issue)

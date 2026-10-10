@@ -467,7 +467,8 @@ export const register: Register = (on, options) => {
           ),
           b.close === null ? null : (
             <Text color={b.close.isOk ? 'success' : 'warning'}>
-              {closeWords(b.close.isOk)}
+              {/* A speech bubble: the line is about this session (this conversation), not the task. */}
+              {`💬 ${closeWords(b.close.isOk)}`}
               {b.close.reason !== '' && <Text dimColor>{` — ${b.close.reason}`}</Text>}
             </Text>
           ),

@@ -1,0 +1,8 @@
+{
+  "name": "session-title",
+  "version": "0.1.0",
+  "description": "Reminds Claude to rename the session in the desktop app's sidebar whenever the task's state changes: issue or task, subject, state",
+  "author": { "name": "tomotos141" },
+  "homepage": "https://github.com/tomotos141/claude-code-overview",
+  "license": "MIT"
+}

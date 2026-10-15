@@ -75,21 +75,24 @@ It sets the language of the pane's own headings. Claude writes the contents in w
 - If the pane falls behind, just ask Claude to update it.
 - Claude is asked to clear the pane when a task is over: it then shows only the Goal heading with its placeholder line, plus the Session section when Claude sends it along (as it is told to) or a "keep it open" was already shown. If the task itself is still shown, ask it to.
 
-## session-title (a second plugin, for the desktop app)
+## session-title has moved
 
-The same marketplace carries a small companion. It asks Claude to keep the session's name in the sidebar current, as `<issue or task> <subject> <state>` (for example `ABC-123 onboarding checklist waiting for review`), so a list of sessions shows which one is waiting for you.
+The companion plugin that kept the session's name current used to live here. It is now **`session-board`**, in its own marketplace: [tomotos141/claude-code-session-board](https://github.com/tomotos141/claude-code-session-board).
 
-- It adds a rule to Claude's system prompt. It keeps the desktop app's rename tool (`set_session_title`) at hand and adds the same rule to that tool's description. And it adds one line to the result of each `overview` update: if the task's state changed, rename the session too. Claude judges whether it changed, and is told not to rename every turn.
-- Where the session has no rename tool, such as the terminal, it adds nothing.
-- If you named a session yourself, the app asks you before Claude renames it. In bypass permissions mode the app does not ask, so a name you set by hand is replaced when the task's state changes. This is the app's own behavior, as its rename tool describes it.
-- Without `overview` installed, the rule still applies; only the reminder after an update is missing.
-- It makes no network requests and calls no model of its own.
+It was renamed because what it does changed. It no longer writes the task's state into the session's name; the state is shown by which section of the desktop app's sidebar the session sits in, and the name stays the name of the work.
+
+If you installed `session-title` from here, remove it and install `session-board` instead:
 
 ```bash
-claude plugin install session-title@claude-code-overview
+claude plugin uninstall session-title@claude-code-overview
 ```
 
-Then start a new session. Its tests pass on Claude Code 2.1.295. On 2.1.282 the module does not load: that build does not know the `prompt.compose` event.
+```bash
+claude plugin marketplace add https://github.com/tomotos141/claude-code-session-board
+claude plugin install session-board@claude-code-session-board
+```
+
+Three things to know before you move. `session-board` needs five sections that you create yourself in the app's sidebar, under the exact Japanese names its README gives: it looks each one up by exact name and will not create a missing one, so a near miss means it names sessions but never files them, and nothing says why. The rule it adds to Claude is written in Japanese. And it needs a newer Claude Code than this pane does. Its README has the details.
 
 ## License
 
@@ -141,21 +144,24 @@ claude plugin install overview@claude-code-overview --config language=ja
 - ペインの更新が遅れていたら、「ペインを更新して」と頼んでください。
 - 作業が終わったら、Claude がペインを空にするよう指示してあります。空になると「目的」の見出しと案内の1行だけになり、Claude が一緒に送れば（そう指示してあります）、または「まだ閉じない」が出ていれば、「セッション」の欄も残ります。作業の中身が残っていたら、空にするよう頼んでください。
 
-### session-title（2つ目の plugin、デスクトップアプリ向け）
+### session-title は引っ越しました
 
-同じ配布元に、小さな相棒を置いています。サイドバーに出るセッションの名前を、作業の状態に合わせて `<issue か作業名> <対象> <状態>`（例: `ABC-123 入社手続きチェックリスト レビュー待ち`）に書き換えるよう、Claude に頼みます。セッションの一覧を見るだけで、どれが自分の返事を待っているかがわかります。
+セッションの名前を作業に合わせて書き換える相棒の plugin は、ここに置いていました。いまは **`session-board`** という名前で、別の配布元にあります。[tomotos141/claude-code-session-board](https://github.com/tomotos141/claude-code-session-board)
 
-- システムプロンプトに決まりを足します。デスクトップアプリの改名ツール（`set_session_title`）をすぐ使える位置に出し、そのツールの説明にも同じ決まりを足します。そして `overview` を更新した結果に「作業の状態が変わったなら、セッション名も変える」という1行を足します。変わったかどうかは Claude が判断し、毎ターンは書き換えないよう指示してあります。
-- ターミナルなど、セッションに改名ツールが無い場面では何も足しません。
-- 自分で付けた名前を Claude が変えるときは、アプリが先に確認を出します。bypass permissions モードではアプリが確認を出さないので、手で付けた名前も、作業の状態が変わると書き換わります。これはアプリ側の動きで、改名ツールの説明にそう書かれています。
-- `overview` を入れていなくても決まりは効きます。更新のあとの声かけだけが無くなります。
-- plugin 自身は外部と通信せず、モデルも呼びません。
+やることが変わったので、名前も変えました。作業の状態をセッションの名前に書き込むのはやめました。状態は、デスクトップアプリのサイドバーのどのセクションにセッションが入っているかで見せ、名前は作業の名前のままにします。
+
+ここから `session-title` を入れている方は、外して `session-board` を入れてください。
 
 ```bash
-claude plugin install session-title@claude-code-overview
+claude plugin uninstall session-title@claude-code-overview
 ```
 
-入れたら新しいセッションを開いてください。テストは Claude Code 2.1.295 で通っています。2.1.282 ではモジュールが読み込まれません（`prompt.compose` というイベントを知らないためです）。
+```bash
+claude plugin marketplace add https://github.com/tomotos141/claude-code-session-board
+claude plugin install session-board@claude-code-session-board
+```
+
+移る前に3つ。`session-board` は、サイドバーのセクションを5つ、自分で作る必要があります。名前は日本語で、引っ越し先の README にあるとおりに付けてください。plugin は名前の完全一致で引き、無いセクションは作らないので、少し違うだけでも、セッションに名前は付いてもセクションへは移らず、理由も出ません。Claude に足す決まりは日本語で書かれています。それと、このペインより新しい Claude Code が要ります。詳しくは引っ越し先の README をご覧ください。
 
 ### ライセンス
 
